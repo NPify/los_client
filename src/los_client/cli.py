@@ -2,10 +2,11 @@ import argparse
 import os
 import sys
 import json
-import subprocess
 import asyncio
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
+from websockets.asyncio.client import connect
 
 @dataclass
 class CLIConfig:
@@ -46,8 +47,8 @@ class CLIConfig:
 
 @dataclass
 class SatCLI:
-    output_folder = os.path.join(os.path.dirname(__file__) , "output")
     config : CLIConfig
+    output_folder: Path = Path(__file__).resolve().parent / "output"
 
     def __init__(self) -> None:
         self.config = CLIConfig(os.path.join(
@@ -83,7 +84,7 @@ class SatCLI:
                 print(f"Problem path set to: {self.config.problem_path}")
                 self.config.save_config()
 
-    def confirm(self) -> None:
+    async def confirm(self) -> None:
         if not (self.config.solver_path and self.config.output_path
                 and self.config.problem_path):
             print("Error: Please provide all paths (-path, -output, -problem) "
@@ -92,26 +93,28 @@ class SatCLI:
         # TODO: Ensure the solver script is executable
         if False:
             try:
-                result = subprocess.run(
-                    [self.solver_path],
-                    capture_output=True,
-                    text=True
+                process = await asyncio.create_subprocess_exec(
+                    self.solver_path,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE
                 )
 
-                if result.returncode != 0:
+                stdout, stderr = await process.communicate()
+
+                if process.returncode != 0:
                     print(f"Error: Build script at {self.solver_path} "
-                          f"failed with return code {result.returncode}.")
-                    print(f"stderr: {result.stderr}")
+                          f"failed with return code {process.returncode}.")
+                    print(f"stderr: {stderr.decode()}")
                     return
 
                 print("Build script executed successfully.")
-                print(f"stdout: {result.stdout}")
+                print(f"stdout: {stdout.decode()}")
             except FileNotFoundError:
-                print(f"Error: Build script not found at {self.solver_path}."
-                      f" Ensure the path is correct.")
+                print(f"Error: Build script not found at {self.solver_path}. "
+                      f"Ensure the path is correct.")
             except Exception as e:
-                print(f"Error: An unexpected occurred while running the"
-                      f" build script. Exception: {e}")
+                print(f"Error: An unexpected error occurred while running the "
+                      f"build script. Exception: {e}")
 
         open(os.path.join(self.output_folder,
                               self.config.problem_path + ".txt"), "w").close()
@@ -121,15 +124,16 @@ class SatCLI:
         print("Configuration confirmed. Ready to run the solver.")
 
         from los_client.client import Client
-        client = Client(self.config)
-        asyncio.run(client.register_solver())
-        asyncio.run(client.run_solver())
+        client = Client(self.config)  # type: ignore
+        async with connect(client.host) as ws:
+            await client.register_solver(ws)
+            await client.run_solver(ws)
 
 
 class Dummy:
     pass
 
-def main() -> None:
+async def cli() -> None:
     parser = argparse.ArgumentParser(description="League of Solvers CLI.")
     parser.add_argument("-solver",nargs='?', const=Dummy(), help="Path"
                 " to the SAT solver execution script. If no path is provided, "
@@ -150,9 +154,12 @@ def main() -> None:
     app = SatCLI()
 
     if args.confirm:
-        app.confirm()
+        await app.confirm()
     else:
         app.configure(args)
+
+def main()->None:
+    asyncio.run(cli())
 
 if __name__ == "__main__":
     main()

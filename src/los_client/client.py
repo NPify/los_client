@@ -1,11 +1,11 @@
 import hashlib
-import asyncio
 import base64
 import pyaes  # type: ignore[import-untyped]
 from los_client import models
 from los_client.cli import CLIConfig
 from dataclasses import dataclass
-from websockets.asyncio.client import connect
+from websockets.asyncio.client import ClientConnection
+
 
 @dataclass
 class Client:
@@ -13,27 +13,19 @@ class Client:
     token : str = "dummy"
     host : str = "ws://localhost:8765"
 
-    async def register_solver(self) -> None:
-        async with connect(self.host) as ws:
+    async def register_solver(self, ws:ClientConnection) -> None:
             models.Welcome.model_validate_json(await ws.recv())
             await ws.send(models.NextMatch().model_dump_json())
             print("Waiting for registration to open")
-            while True:
-                try:
-                    await ws.recv()
-                    print("Registration is open, registering solver")
-                    await ws.send(models.RegisterSolver(
-                        solver_token=self.token
-                    ).model_dump_json())
-                    await ws.recv()
-                    break
-                except asyncio.TimeoutError:
-                    await asyncio.sleep(1)
+            await ws.recv()
+            print("Registration is open, registering solver")
+            await ws.send(models.RegisterSolver(
+                solver_token=self.token
+            ).model_dump_json())
+            await ws.recv()
             print("Solver registered")
 
-    async def run_solver(self) -> None:
-        async with connect(self.host) as ws:
-            models.Welcome.model_validate_json(await ws.recv())
+    async def run_solver(self, ws:ClientConnection) -> None:
             await ws.send(models.RequestInstance().model_dump_json())
             await ws.recv()
             encrypted_instance = await ws.recv()
