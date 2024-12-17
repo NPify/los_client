@@ -1,3 +1,5 @@
+src/los_client/output
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
