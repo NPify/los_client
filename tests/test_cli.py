@@ -72,13 +72,13 @@ def test_configure_problem() -> None:
     assert cli.config.problem_path == Path("new_problem")
 
 
-def test_confirm(capfd: CaptureFixture) -> None:
+def test_run(capfd: CaptureFixture) -> None:
     cli = SatCLI()
     cli.output_folder = Path("tests/test_data/")
     cli.config.solver_path = Path("solver")
     cli.config.output_path = Path("output")
     cli.config.problem_path = Path("problem")
-    asyncio.run(cli.confirm())
+    asyncio.run(cli.run(cli.config))
     captured = capfd.readouterr()
     assert (
         "Configuration confirmed. Ready to register and run the solver."

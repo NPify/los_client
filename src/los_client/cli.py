@@ -1,6 +1,8 @@
 import argparse
 import sys
 import asyncio
+
+from los_client import models
 from los_client.config import CLIConfig
 from los_client.client import Client
 from dataclasses import dataclass
@@ -19,47 +21,19 @@ class SatCLI:
 
     def configure(self, args: argparse.Namespace) -> None:
         if args.solver:
-            if isinstance(args.solver, Dummy):
-                print(
-                    "Current path to solver is: ",
-                    (
-                        self.config.solver_path
-                        if self.config.solver_path != ""
-                        else "No path set"
-                    ),
-                )
-            else:
-                self.config.solver_path = args.solver
-                print(f"Solver path set to: {self.config.solver_path}")
-                self.config.save_config()
+            self.config.solver_path = args.solver
+            print(f"Solver path set to: {self.config.solver_path}")
 
-        if args.output:
-            if isinstance(args.output, Dummy):
-                print(
-                    "Current path to output file is: ",
-                    self.config.output_path
-                    if self.config.output_path != ""
-                    else "No path set",
-                )
-            else:
-                self.config.output_path = args.output
-                print(f"Output path set to: {self.config.output_path}")
-                self.config.save_config()
+        elif args.output:
+            self.config.output_path = args.output
+            print(f"Output path set to: {self.config.output_path}")
 
-        if args.problem:
-            if isinstance(args.problem, Dummy):
-                print(
-                    "Current path to problem file is: ",
-                    self.config.problem_path
-                    if self.config.problem_path != ""
-                    else "No path set",
-                )
-            else:
-                self.config.problem_path = args.problem
-                print(f"Problem path set to: {self.config.problem_path}")
-                self.config.save_config()
+        elif args.problem:
+            self.config.problem_path = args.problem
+            print(f"Problem path set to: {self.config.problem_path}")
+        self.config.save_config()
 
-    async def confirm(self) -> None:
+    async def run(self, config: CLIConfig) -> None:
         if not (
             self.config.solver_path
             and self.config.output_path
@@ -67,96 +41,82 @@ class SatCLI:
         ):
             print(
                 "Error: Please provide all paths (-path, -output, -problem) "
-                "before confirmation."
+                "before running."
             )
             return
-        # TODO: Ensure the solver script is executable
-        if False:
-            try:
-                process = await asyncio.create_subprocess_exec(
-                    self.solver_path,
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE,
-                )
-
-                stdout, stderr = await process.communicate()
-
-                if process.returncode != 0:
-                    print(
-                        f"Error: Build script at {self.solver_path} "
-                        f"failed with return code {process.returncode}."
-                    )
-                    print(f"stderr: {stderr.decode()}")
-                    return
-
-                print("Build script executed successfully.")
-                print(f"stdout: {stdout.decode()}")
-            except FileNotFoundError:
-                print(
-                    f"Error: Build script not found at {self.solver_path}. "
-                    f"Ensure the path is correct."
-                )
-            except Exception as e:
-                print(
-                    f"Error: An unexpected error occurred while running the "
-                    f"build script. Exception: {e}"
-                )
 
         open(self.output_folder / self.config.problem_path, "w").close()
         open(self.output_folder / self.config.output_path, "w").close()
 
         print("Configuration confirmed. Ready to register and run the solver.")
 
-
-class Dummy:
-    pass
+        client = Client(config)
+        try:
+            async with connect(client.host) as ws:
+                models.Welcome.model_validate_json(await ws.recv())
+                await client.register_solver(ws)
+                await client.run_solver(ws)
+        except OSError:
+            print(
+                "Error: Connection refused. "
+                "Please ensure the server is running."
+            )
 
 
 async def cli() -> None:
     parser = argparse.ArgumentParser(description="League of Solvers CLI.")
-    parser.add_argument(
-        "-solver",
-        nargs="?",
-        const=Dummy(),
-        help="Path"
-        " to the SAT solver execution script. If no path is provided, "
-        "then current path is displayed.",
+    subparsers = parser.add_subparsers(
+        dest="command", help="Available commands"
     )
-    parser.add_argument(
+
+    run_parser = subparsers.add_parser(
+        "run", help="Register and run the solver."
+    )
+    run_parser.add_argument(
+        "-solver", nargs="?", help="Path to the SAT solver binary."
+    )
+    run_parser.add_argument(
         "-output",
         nargs="?",
-        const=Dummy(),
-        help="Path"
-        " to the file where you want the solution to be written. "
-        "If no path is provided, then current path is displayed.",
+        help="Path to the file where you want the solution to be written. ",
     )
-    parser.add_argument(
+    run_parser.add_argument(
         "-problem",
         nargs="?",
-        const=Dummy(),
-        help="Path"
-        " to the file where you want the problem to be written. "
-        "If no path is provided, then current path is displayed.",
+        help="Path to the file where you want the problem to be written.",
     )
-    parser.add_argument(
-        "-confirm",
-        action="store_true",
-        help="Confirm configuration and register the solver",
+
+    # Subcommand: show
+    subparsers.add_parser("show", help="Show the current configuration.")
+
+    # Subcommand: set
+    set_parser = subparsers.add_parser("set", help="Set the path.")
+    set_parser.add_argument(
+        "-solver",
+        help="Path to the SAT solver execution script.",
     )
+    set_parser.add_argument(
+        "-output",
+        help="Path to the file where you want the solution to be written.",
+    )
+    set_parser.add_argument(
+        "-problem",
+        help="Path to the file where you want the problem to be written.",
+    )
+
     args = parser.parse_args()
+
     if len(sys.argv) == 1:
         parser.print_help()
         sys.exit(1)
 
     app = SatCLI()
 
-    if args.confirm:
-        await app.confirm()
-        client = Client(app.config)
-        async with connect(client.host) as ws:
-            await client.register_solver(ws)
-            await client.run_solver(ws)
-    else:
+    if args.command == "run":
+        await app.run(app.config)
+    elif args.command == "show":
+        app.config.show_config()
+    elif args.command == "set":
         app.configure(args)
 
 

@@ -41,3 +41,8 @@ class CLIConfig:
                 json.dump(config_json, config_file)
         except IOError as e:
             print(f"Error saving configuration: {e}", file=sys.stderr)
+
+    def show_config(self) -> None:
+        print(f"Solver path: {self.solver_path}")
+        print(f"Output path: {self.output_path}")
+        print(f"Problem path: {self.problem_path}")
