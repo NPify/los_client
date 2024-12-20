@@ -7,10 +7,11 @@ from pathlib import Path
 
 @dataclass
 class CLIConfig:
-    json_path: Path
     solver_path: Path = Path()
     output_path: Path = Path()
     problem_path: Path = Path()
+    output_folder: Path = Path(__file__).resolve().parent / "output"
+    json_path: Path = output_folder / "config.json"
 
     def load_config(self) -> None:
         if os.path.exists(self.json_path):

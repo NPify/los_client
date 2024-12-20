@@ -1,6 +1,7 @@
 import hashlib
 import base64
 from typing import Any
+import asyncio
 import pyaes  # type: ignore[import-untyped]
 from los_client import models
 from los_client.config import CLIConfig
@@ -46,22 +47,94 @@ class Client:
         instance = aes.decrypt(encrypted_instance)
         print(f"Retrieved Problem:\n {instance}")
 
-        dummy_sol = (True, [1, -2, 3])
-        md5_hash = hashlib.md5(str(dummy_sol[1]).encode("utf-8")).hexdigest()
+        with open(
+            self.config.output_folder / self.config.problem_path, "w"
+        ) as f:
+            f.write(instance.decode())
+
+        print("Running solver...")
+
+        result = await self.execute()
+
+        if not result:
+            return
+
+        with open(
+            self.config.output_folder / self.config.output_path, "w"
+        ) as f:
+            f.write(result)
+
+        sol = self.parse_result(result)
+        if sol is None:
+            print("Solver could not determine satisfiability")
+            return
+        md5_hash = hashlib.md5(str(sol[1]).encode("utf-8")).hexdigest()
 
         await ws.send(
             models.Solution(
                 solver_token=self.token,
-                is_satisfiable=dummy_sol[0],
+                is_satisfiable=sol[0],
                 assignment_hash=md5_hash,
             ).model_dump_json()
         )
         self.response_ok(await ws.recv())
-
-        await ws.send(
-            models.Assignment(
-                solver_token=self.token, assignment=dummy_sol[1]
-            ).model_dump_json()
-        )
-        self.response_ok(await ws.recv())
         print("Solution submitted")
+
+        if sol[0]:
+            await ws.send(
+                models.Assignment(
+                    solver_token=self.token, assignment=sol[1]
+                ).model_dump_json()
+            )
+            self.response_ok(await ws.recv())
+            print("Assignment submitted")
+
+    async def execute(self) -> str:
+        try:
+            process = await asyncio.create_subprocess_exec(
+                self.config.solver_path,
+                str(self.config.output_folder / self.config.problem_path),
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+
+            stdout, stderr = await process.communicate()
+
+            print("Solver executed successfully.")
+            print(f"stdout: {stdout.decode()}")
+            print(f"stderr: {stderr.decode()}")
+            return stdout.decode()
+        except FileNotFoundError:
+            print(
+                f"Error: Solver binary "
+                f"not found at {self.config.solver_path}."
+                f"Ensure the path is correct."
+            )
+            return ""
+        except Exception as e:
+            print(
+                f"Error: An unexpected error occurred while running the "
+                f"solver. Exception: {e}"
+            )
+            return ""
+
+    @staticmethod
+    def parse_result(result: str) -> tuple[bool, list[int]] | None:
+        satisfiable: bool = False
+        assignments: list[int] = []
+        for line in result.split("\n"):
+            if line.startswith("c"):
+                continue
+            if line.startswith("s SATISFIABLE"):
+                satisfiable = True
+                continue
+            if line.startswith("s UNSATISFIABLE"):
+                return False, assignments
+            if line.startswith("s UNKNOWN"):
+                return None
+            if line.startswith("v"):
+                values = line[1:].split()
+                assignments += list(map(int, values))
+                if values[-1] == "0":
+                    break
+        return satisfiable, assignments

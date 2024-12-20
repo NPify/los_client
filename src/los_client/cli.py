@@ -6,17 +6,15 @@ from los_client import models
 from los_client.config import CLIConfig
 from los_client.client import Client
 from dataclasses import dataclass
-from pathlib import Path
 from websockets.asyncio.client import connect
 
 
 @dataclass
 class SatCLI:
     config: CLIConfig
-    output_folder: Path = Path(__file__).resolve().parent / "output"
 
     def __init__(self) -> None:
-        self.config = CLIConfig(self.output_folder / "config.json")
+        self.config = CLIConfig()
         self.config.load_config()
 
     def configure(self, args: argparse.Namespace) -> None:
@@ -45,8 +43,8 @@ class SatCLI:
             )
             return
 
-        open(self.output_folder / self.config.problem_path, "w").close()
-        open(self.output_folder / self.config.output_path, "w").close()
+        open(self.config.output_folder / self.config.problem_path, "w").close()
+        open(self.config.output_folder / self.config.output_path, "w").close()
 
         print("Configuration confirmed. Ready to register and run the solver.")
 
@@ -122,7 +120,3 @@ async def cli() -> None:
 
 def main() -> None:
     asyncio.run(cli())
-
-
-if __name__ == "__main__":
-    main()
