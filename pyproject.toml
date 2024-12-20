@@ -1,19 +1,29 @@
 [project]
 name = "los-client"
 version = "0.1.0"
-description = "Add your description here"
+description = "League of Solvers Client CLI"
 readme = "README.md"
+authors = [
+    { name = "Amr Yonis", email = "amrmohamedyonis@gmail.com" }
+]
 requires-python = ">=3.11"
-
 dependencies = [
     "cpmpy>=0.9.23",
     "ortools>=9.11.4210",
     "pre-commit>=4.0.1",
+    "pyaes>=1.6.1",
+    "pydantic>=2.10.3",
     "pysat>=3.2.1",
     "pytest>=8.3.3",
     "python-sat[aiger,approxmc,cryptosat,pblib]>=1.8.dev13",
     "setuptools>=75.6.0",
+    "websockets>=14.1",
 ]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
 
 [dependency-groups]
 dev = [
@@ -36,6 +46,7 @@ select = ["E", "F", "W", "C"]
 [tool.ruff.lint.mccabe]
 max-complexity = 15
 
-[build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+
+[project.scripts]
+los_client = "los_client.cli:main"
+
