@@ -4,6 +4,7 @@ import sys
 from dataclasses import dataclass
 
 from websockets.asyncio.client import connect
+from websockets.exceptions import WebSocketException
 
 from los_client import models
 from los_client.client import Client
@@ -45,20 +46,48 @@ class SatCLI:
 
         print("Configuration confirmed. Ready to register and run the solver.")
 
+        sleep_time = 1
         client = Client(config)
-        try:
-            async with connect(str(client.config.host)) as ws:
-                models.Welcome.model_validate_json(await ws.recv())
-                await client.register_solver(ws)
-                await client.run_solver(ws)
-        except OSError:
-            print(
-                "Error: Connection refused. "
-                "Please ensure the server is running."
-            )
+        while True:
+            try:
+                async with connect(str(client.config.host)) as ws:
+                    try:
+                        sleep_time = 1
+                        models.Welcome.model_validate_json(await ws.recv())
+                        while True:
+                            await client.register_solver(ws)
+                            await client.run_solver(ws)
+                    except OSError as e:
+                        # TODO: we do not want to catch OSErrors from inside,
+                        # so let us just repackage it for now
+                        raise RuntimeError(e) from e
+            except (OSError, WebSocketException) as e:
+                print(
+                    f"Error: Connection failed: {e} "
+                    "Waiting for server to come back up. "
+                    f"Retry in {sleep_time} seconds. "
+                )
+                await asyncio.sleep(sleep_time)
+                sleep_time *= 2
+                if sleep_time > 60:
+                    sleep_time = 60
 
 
-async def cli() -> None:
+async def cli(args: argparse.Namespace) -> None:
+    config = CLIConfig.load_config(args.config)
+    config.overwrite(args)
+
+    app = SatCLI(config)
+
+    if args.command == "run":
+        await app.run(app.config)
+    elif args.command == "show":
+        app.config.show_config()
+    elif args.command == "set":
+        app.configure(args)
+
+
+def main() -> None:
     parser = argparse.ArgumentParser(description="League of Solvers CLI.")
     parser.add_argument(
         "--config",
@@ -111,28 +140,19 @@ async def cli() -> None:
 
     args = parser.parse_args()
 
+    if len(sys.argv) == 1:
+        parser.print_help()
+        sys.exit(1)
+
     try:
-        config = CLIConfig.load_config(args.config)
-        config.overwrite(args)
-
-        if len(sys.argv) == 1:
-            parser.print_help()
-            sys.exit(1)
-
-        app = SatCLI(config)
-
-        if args.command == "run":
-            await app.run(app.config)
-        elif args.command == "show":
-            app.config.show_config()
-        elif args.command == "set":
-            app.configure(args)
+        asyncio.run(cli(args))
+    except KeyboardInterrupt as e:
+        if not args.debug:
+            print("Got KeyboardInterrupt, Goodbye!")
+        else:
+            raise e from e
     except Exception as e:
         if not args.debug:
             print(f"Error: {e}", file=sys.stderr)
         else:
-            raise e
-
-
-def main() -> None:
-    asyncio.run(cli())
+            raise e from e

@@ -19,13 +19,12 @@ class Client:
     def response_ok(raw_response: str | bytes) -> Any:
         response = models.ResponseAdapter.validate_json(raw_response)
         if response.result == models.MessageTypes.ERROR:
-            print(response.error)
-        assert response.result == models.MessageTypes.OK
+            raise RuntimeError(response.error)
         return response.message
 
     async def register_solver(self, ws: ClientConnection) -> None:
-        await ws.send(models.NextMatch().model_dump_json())
         print("Waiting for registration to open")
+        await ws.send(models.NextMatch().model_dump_json())
         self.response_ok(await ws.recv())
         print("Registration is open, registering solver")
         await ws.send(
@@ -39,13 +38,13 @@ class Client:
         self.response_ok(await ws.recv())
         encrypted_instance = await ws.recv()
 
+        print("Waiting for match to start")
         await ws.send(models.RequestKey().model_dump_json())
         msg = self.response_ok(await ws.recv())
         keymsg = models.DecryptionKey.model_validate(msg)
         key = base64.b64decode(keymsg.key)
         aes = pyaes.AESModeOfOperationCTR(key)
         instance = aes.decrypt(encrypted_instance)
-        print(f"Retrieved Problem:\n {instance}")
 
         with open(
             self.config.output / self.config.problem_path, "w"
