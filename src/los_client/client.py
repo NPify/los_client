@@ -14,8 +14,6 @@ from los_client.config import CLIConfig
 @dataclass
 class Client:
     config: CLIConfig
-    token: str = "dummy"
-    host: str = "ws://localhost:8765"
 
     @staticmethod
     def response_ok(raw_response: str | bytes) -> Any:
@@ -31,7 +29,7 @@ class Client:
         self.response_ok(await ws.recv())
         print("Registration is open, registering solver")
         await ws.send(
-            models.RegisterSolver(solver_token=self.token).model_dump_json()
+            models.RegisterSolver(solver_token=self.config.token).model_dump_json()
         )
         self.response_ok(await ws.recv())
         print("Solver registered")
@@ -50,7 +48,7 @@ class Client:
         print(f"Retrieved Problem:\n {instance}")
 
         with open(
-            self.config.output_folder / self.config.problem_path, "w"
+            self.config.output / self.config.problem_path, "w"
         ) as f:
             f.write(instance.decode())
 
@@ -62,7 +60,7 @@ class Client:
             return
 
         with open(
-            self.config.output_folder / self.config.output_path, "w"
+            self.config.output / self.config.output_path, "w"
         ) as f:
             f.write(result)
 
@@ -74,7 +72,7 @@ class Client:
 
         await ws.send(
             models.Solution(
-                solver_token=self.token,
+                solver_token=self.config.token,
                 is_satisfiable=sol[0],
                 assignment_hash=md5_hash,
             ).model_dump_json()
@@ -85,7 +83,7 @@ class Client:
         if sol[0]:
             await ws.send(
                 models.Assignment(
-                    solver_token=self.token, assignment=sol[1]
+                    solver_token=self.config.token, assignment=sol[1]
                 ).model_dump_json()
             )
             self.response_ok(await ws.recv())
@@ -94,8 +92,8 @@ class Client:
     async def execute(self) -> str:
         try:
             process = await asyncio.create_subprocess_exec(
-                self.config.solver_path,
-                str(self.config.output_folder / self.config.problem_path),
+                self.config.solver,
+                str(self.config.output / self.config.problem_path),
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
@@ -109,7 +107,7 @@ class Client:
         except FileNotFoundError:
             print(
                 f"Error: Solver binary "
-                f"not found at {self.config.solver_path}."
+                f"not found at {self.config.solver}."
                 f"Ensure the path is correct."
             )
             return ""
