@@ -1,5 +1,6 @@
 import asyncio
 from pathlib import Path
+
 from _pytest.capture import CaptureFixture
 from websockets.asyncio.client import connect
 

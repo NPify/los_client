@@ -1,12 +1,13 @@
 import argparse
-import sys
 import asyncio
+import sys
+from dataclasses import dataclass
+
+from websockets.asyncio.client import connect
 
 from los_client import models
-from los_client.config import CLIConfig
 from los_client.client import Client
-from dataclasses import dataclass
-from websockets.asyncio.client import connect
+from los_client.config import CLIConfig
 
 
 @dataclass

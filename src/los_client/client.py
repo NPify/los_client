@@ -1,12 +1,14 @@
-import hashlib
-import base64
-from typing import Any
 import asyncio
+import base64
+import hashlib
+from dataclasses import dataclass
+from typing import Any
+
 import pyaes  # type: ignore[import-untyped]
+from websockets.asyncio.client import ClientConnection
+
 from los_client import models
 from los_client.config import CLIConfig
-from dataclasses import dataclass
-from websockets.asyncio.client import ClientConnection
 
 
 @dataclass

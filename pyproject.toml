@@ -41,7 +41,7 @@ warn_return_any = true
 line-length = 79
 
 [tool.ruff.lint]
-select = ["E", "F", "W", "C"]
+select = ["E", "F", "W", "C", "I"]
 
 [tool.ruff.lint.mccabe]
 max-complexity = 15

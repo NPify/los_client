@@ -1,6 +1,6 @@
+import json
 import os
 import sys
-import json
 from dataclasses import dataclass
 from pathlib import Path
 

@@ -1,6 +1,6 @@
 import argparse
-import os
 import asyncio
+import os
 from pathlib import Path
 
 from _pytest.capture import CaptureFixture
