@@ -28,7 +28,9 @@ class Client:
         self.response_ok(await ws.recv())
         print("Registration is open, registering solver")
         await ws.send(
-            models.RegisterSolver(solver_token=self.config.token).model_dump_json()
+            models.RegisterSolver(
+                solver_token=self.config.token
+            ).model_dump_json()
         )
         self.response_ok(await ws.recv())
         print("Solver registered")
@@ -46,9 +48,7 @@ class Client:
         aes = pyaes.AESModeOfOperationCTR(key)
         instance = aes.decrypt(encrypted_instance)
 
-        with open(
-            self.config.output / self.config.problem_path, "w"
-        ) as f:
+        with open(self.config.output / self.config.problem_path, "w") as f:
             f.write(instance.decode())
 
         print("Running solver...")
@@ -58,9 +58,7 @@ class Client:
         if not result:
             return
 
-        with open(
-            self.config.output / self.config.output_path, "w"
-        ) as f:
+        with open(self.config.output / self.config.output_path, "w") as f:
             f.write(result)
 
         sol = self.parse_result(result)

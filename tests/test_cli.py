@@ -9,6 +9,7 @@ from los_client.cli import CLIConfig, SatCLI
 
 TEST_DATA = Path(__file__).parent / "test_data"
 
+
 def test_save_load_config() -> None:
     path = TEST_DATA / "config.json"
     config = CLIConfig.load_config(path)
@@ -34,9 +35,9 @@ def test_load_config_no_file() -> None:
 
 def test_save_config() -> None:
     config = CLIConfig(
-        solver = Path("solver"),
-        output = Path("output"),
-        problem_path = Path("problem"),
+        solver=Path("solver"),
+        output=Path("output"),
+        problem_path=Path("problem"),
     )
     config.save_config(TEST_DATA / "config.json")
 

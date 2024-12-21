@@ -1,8 +1,11 @@
 from __future__ import annotations
-from pathlib import Path
-from pydantic import BaseModel, AnyUrl
-from typing import Any
+
 import argparse
+from pathlib import Path
+from typing import Any
+
+from pydantic import AnyUrl, BaseModel
+
 
 class CLIConfig(BaseModel):
     solver: Path = Path().resolve()
@@ -35,7 +38,11 @@ class CLIConfig(BaseModel):
             return config
 
     def overwrite(self, args: argparse.Namespace) -> None:
-        set_args = {key: value for key, value in vars(args).items() if value is not None}
+        set_args = {
+            key: value
+            for key, value in vars(args).items()
+            if value is not None
+        }
         args_config = CLIConfig(**set_args)
         for field in args_config.__pydantic_fields_set__:
             setattr(self, field, getattr(args_config, field))

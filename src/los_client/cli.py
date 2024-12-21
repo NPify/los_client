@@ -1,7 +1,9 @@
 import argparse
 import asyncio
+import os
 import sys
 from dataclasses import dataclass
+from pathlib import Path
 
 from websockets.asyncio.client import connect
 from websockets.exceptions import WebSocketException
@@ -9,8 +11,7 @@ from websockets.exceptions import WebSocketException
 from los_client import models
 from los_client.client import Client
 from los_client.config import CLIConfig
-from pathlib import Path
-import os
+
 
 @dataclass
 class SatCLI:
@@ -93,7 +94,7 @@ def main() -> None:
         "--config",
         help="Configuration file.",
         type=Path,
-        default=Path(__file__).parent.parent.parent / "configs/default.json"
+        default=Path(__file__).parent.parent.parent / "configs/default.json",
     )
     parser.add_argument(
         "--debug",
@@ -108,9 +109,7 @@ def main() -> None:
     run_parser = subparsers.add_parser(
         "run", help="Register and run the solver."
     )
-    run_parser.add_argument(
-        "--solver", help="Path to the SAT solver binary."
-    )
+    run_parser.add_argument("--solver", help="Path to the SAT solver binary.")
     run_parser.add_argument(
         "--output",
         help="Path to the file where you want the solution to be written. ",
