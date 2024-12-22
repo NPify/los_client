@@ -11,11 +11,15 @@ to easily participate at the competition. [Learn more]
 
 ## Step 1. Installation
 
-For Debian and many other modern operating systems you can use
+It is recommended to install via `pipx` so that the client can run in a seperate environment.
 ```
-    pipx install los_client
+sudo apt install pipx
 ```
-to install the client into a separate virtual environment.
+
+Once pipx is installed you can install the client via
+```
+    pipx install los-client
+```
 
 
 ## Step 2. Register a Solver
