@@ -1,6 +1,7 @@
-from pydantic import BaseModel, Field, TypeAdapter
 from enum import StrEnum, auto
-from typing import Literal, Any, Annotated, TypeAlias
+from typing import Annotated, Any, Literal, TypeAlias
+
+from pydantic import BaseModel, Field, TypeAdapter
 
 
 class ProtocolVersion(BaseModel):

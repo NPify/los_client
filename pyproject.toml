@@ -4,8 +4,10 @@ version = "0.1.0"
 description = "League of Solvers Client CLI"
 readme = "README.md"
 authors = [
+    { name = "Stephan Gocht", email = "stephan@drgocht.com" },
     { name = "Amr Yonis", email = "amrmohamedyonis@gmail.com" }
 ]
+license = "MIT"
 requires-python = ">=3.11"
 dependencies = [
     "cpmpy>=0.9.23",
@@ -41,7 +43,7 @@ warn_return_any = true
 line-length = 79
 
 [tool.ruff.lint]
-select = ["E", "F", "W", "C"]
+select = ["E", "F", "W", "C", "I"]
 
 [tool.ruff.lint.mccabe]
 max-complexity = 15

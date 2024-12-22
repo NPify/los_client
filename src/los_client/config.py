@@ -1,49 +1,57 @@
-import os
-import sys
-import json
-from dataclasses import dataclass
+from __future__ import annotations
+
+import argparse
 from pathlib import Path
+from typing import Any
+
+from pydantic import AnyUrl, BaseModel
 
 
-@dataclass
-class CLIConfig:
-    solver_path: Path = Path()
-    output_path: Path = Path()
-    problem_path: Path = Path()
-    output_folder: Path = Path(__file__).resolve().parent / "output"
-    json_path: Path = output_folder / "config.json"
+class CLIConfig(BaseModel):
+    solver: Path = Path().resolve()
+    output_path: Path = Path("stdout.txt")
+    problem_path: Path = Path("problem.cnf")
+    output: Path = (Path(__file__).parent.parent.parent / "output").resolve()
+    token: str = "dummy"
+    host: AnyUrl = AnyUrl("wss://los.npify.com/match_server/sat/")
 
-    def load_config(self) -> None:
-        if os.path.exists(self.json_path):
-            try:
-                with open(self.json_path, "r") as config_file:
-                    config_json = json.load(config_file)
-                    self.solver_path = config_json.get("solver_path")
-                    self.output_path = config_json.get("output_path")
-                    self.problem_path = config_json.get("problem_path")
-            except (json.JSONDecodeError, IOError):
-                print(
-                    "Warning: Failed to load configuration."
-                    " Creating new one."
-                )
-                self.save_config()
-        else:
-            print("No existing configuration found. Creating new one.")
-            self.save_config()
+    def model_post_init(self, context: Any) -> None:
+        """
+        We only want to overwrite poperties if they changed because we
+        use __pydantic_fields_set__ to detect explicitly set fields.
+        """
+        resolved = self.solver.resolve()
+        if self.solver != resolved:
+            self.solver = resolved
+        resolved = self.output.resolve()
+        if self.output != resolved:
+            self.output = resolved
 
-    def save_config(self) -> None:
-        config_json = {
-            "solver_path": str(self.solver_path),
-            "output_path": str(self.output_path),
-            "problem_path": str(self.problem_path),
-        }
+    @staticmethod
+    def load_config(json_path: Path) -> CLIConfig:
         try:
-            with open(self.json_path, "w") as config_file:
-                json.dump(config_json, config_file)
-        except IOError as e:
-            print(f"Error saving configuration: {e}", file=sys.stderr)
+            with open(json_path, "r") as config_file:
+                return CLIConfig.model_validate_json(config_file.read())
+        except FileNotFoundError:
+            config = CLIConfig()
+            config.save_config(json_path)
+            return config
+
+    def overwrite(self, args: argparse.Namespace) -> None:
+        set_args = {
+            key: value
+            for key, value in vars(args).items()
+            if value is not None
+        }
+        args_config = CLIConfig(**set_args)
+        for field in args_config.__pydantic_fields_set__:
+            setattr(self, field, getattr(args_config, field))
+
+    def save_config(self, json_path: Path) -> None:
+        with open(json_path, "w") as config_file:
+            print(self.model_dump_json(indent=4), file=config_file)
 
     def show_config(self) -> None:
-        print(f"Solver path: {self.solver_path}")
-        print(f"Output path: {self.output_path}")
-        print(f"Problem path: {self.problem_path}")
+        print(f"Solver path: {self.solver}")
+        print(f"Output path: {self.output}")
+        print(f"Token: {self.token}")
