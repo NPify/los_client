@@ -13,7 +13,7 @@ class CLIConfig(BaseModel):
     problem_path: Path = Path("problem.cnf")
     output: Path = (Path(__file__).parent.parent.parent / "output").resolve()
     token: str = "dummy"
-    host: AnyUrl = AnyUrl("ws://localhost:8765")
+    host: AnyUrl = AnyUrl("wss://los.npify.com/match_server/sat/")
 
     def model_post_init(self, context: Any) -> None:
         """
