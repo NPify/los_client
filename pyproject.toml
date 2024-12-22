@@ -21,6 +21,15 @@ dependencies = [
     "setuptools>=75.6.0",
     "websockets>=14.1",
 ]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "License :: OSI Approved :: MIT License",
+]
+
+[project.urls]
+"Homepage" = "https://los.npify.com"
+"Bug Reports" = "https://github.com/NPify/los_client/issues"
+"Source" = "https://github.com/NPify/los_client"
 
 [build-system]
 requires = ["hatchling"]
