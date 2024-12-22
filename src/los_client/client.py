@@ -95,12 +95,15 @@ class Client:
                 stderr=asyncio.subprocess.PIPE,
             )
 
-            stdout, stderr = await process.communicate()
+            stdout, stderr = await asyncio.wait_for(process.communicate(), 60 * 40)
 
             print("Solver executed successfully.")
             print(f"stdout: {stdout.decode()}")
             print(f"stderr: {stderr.decode()}")
             return stdout.decode()
+        except TimeoutError:
+            print("Solver timed out after 40 minutes.")
+            return ""
         except FileNotFoundError:
             print(
                 f"Error: Solver binary "
