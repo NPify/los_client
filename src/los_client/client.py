@@ -104,7 +104,16 @@ class Client:
             print(f"stderr: {stderr.decode()}")
             return stdout.decode()
         except TimeoutError:
-            print("Solver timed out after 40 minutes.")
+            print("Solver timed out after 40 minutes, trying to terminate solver...")
+            process.terminate()
+            try:
+                await asyncio.wait_for(
+                    process.wait(), 30
+                )
+            except TimeoutError:
+                process.kill()
+                await process.wait()
+            print("Solver terminated.")
             return ""
         except FileNotFoundError:
             print(
