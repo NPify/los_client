@@ -51,7 +51,8 @@ class SatCLI:
         client = Client(config)
         while True:
             try:
-                async with connect(str(client.config.host)) as ws:
+                max_size = 1024 * 1024 * 32
+                async with connect(str(client.config.host), max_size=max_size) as ws:
                     try:
                         sleep_time = 1
                         models.Welcome.model_validate_json(await ws.recv())
