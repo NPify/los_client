@@ -1,6 +1,6 @@
 [project]
 name = "los-client"
-version = "0.1.0"
+dynamic = ["version"]
 description = "League of Solvers Client CLI"
 readme = "README.md"
 authors = [
@@ -35,6 +35,8 @@ classifiers = [
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+[tool.hatch.version]
+path = "src/los_client/__about__.py"
 
 [dependency-groups]
 dev = [

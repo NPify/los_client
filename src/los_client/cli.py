@@ -9,6 +9,7 @@ from websockets.asyncio.client import connect
 from websockets.exceptions import WebSocketException
 
 from los_client import models
+from los_client.__about__ import __version__
 from los_client.client import Client
 from los_client.config import CLIConfig
 
@@ -52,7 +53,9 @@ class SatCLI:
         while True:
             try:
                 max_size = 1024 * 1024 * 32
-                async with connect(str(client.config.host), max_size=max_size) as ws:
+                async with connect(
+                    str(client.config.host), max_size=max_size
+                ) as ws:
                     try:
                         sleep_time = 1
                         models.Welcome.model_validate_json(await ws.recv())
@@ -98,6 +101,11 @@ def main() -> None:
         default=Path(__file__).parent.parent.parent / "configs/default.json",
     )
     parser.add_argument(
+        "--version",
+        default=False,
+        action="store_true",
+    )
+    parser.add_argument(
         "--debug",
         default=False,
         action="store_true",
@@ -140,9 +148,11 @@ def main() -> None:
 
     args = parser.parse_args()
 
-    if len(sys.argv) == 1:
-        parser.print_help()
-        sys.exit(1)
+    if args.version:
+        print("version:", __version__)
+
+    if not args.command:
+        print("No command given. Use --help for help.")
 
     try:
         asyncio.run(cli(args))

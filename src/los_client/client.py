@@ -95,7 +95,9 @@ class Client:
                 stderr=asyncio.subprocess.PIPE,
             )
 
-            stdout, stderr = await asyncio.wait_for(process.communicate(), 60 * 40)
+            stdout, stderr = await asyncio.wait_for(
+                process.communicate(), 60 * 40
+            )
 
             print("Solver executed successfully.")
             print(f"stdout: {stdout.decode()}")
