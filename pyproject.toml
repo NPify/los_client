@@ -61,5 +61,5 @@ max-complexity = 15
 
 
 [project.scripts]
-los_client = "los_client.cli:main"
+los_client2 = "los_client.cli:main"
 

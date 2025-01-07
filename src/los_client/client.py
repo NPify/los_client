@@ -1,6 +1,7 @@
 import asyncio
 import base64
 import hashlib
+from asyncio import Event
 from dataclasses import dataclass
 from typing import Any
 
@@ -53,7 +54,7 @@ class Client:
 
         print("Running solver...")
 
-        result = await self.execute()
+        result = await self.execute(ws)
 
         if not result:
             return
@@ -86,7 +87,9 @@ class Client:
             self.response_ok(await ws.recv())
             print("Assignment submitted")
 
-    async def execute(self) -> str:
+    async def execute(self, ws: ClientConnection) -> str:
+        server_down_event = asyncio.Event()
+
         try:
             process = await asyncio.create_subprocess_exec(
                 self.config.solver,
@@ -94,40 +97,77 @@ class Client:
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
-
-            stdout, stderr = await asyncio.wait_for(
-                process.communicate(), 60 * 40
+            server_check_task = asyncio.create_task(
+                self.check_server_status(server_down_event, ws)
             )
-
-            print("Solver executed successfully.")
-            print(f"stdout: {stdout.decode()}")
-            print(f"stderr: {stderr.decode()}")
-            return stdout.decode()
-        except TimeoutError:
-            print("Solver timed out after 40 minutes, trying to terminate solver...")
-            process.terminate()
             try:
-                await asyncio.wait_for(
-                    process.wait(), 30
+                done, pending = await asyncio.wait(
+                    [
+                        asyncio.create_task(process.communicate()),
+                    ],
+                    return_when=asyncio.FIRST_COMPLETED,
+                    timeout=60 * 40,
                 )
+
+                if server_down_event.is_set():
+                    print("Server is down, trying to terminate solver...")
+                    process.terminate()
+                    try:
+                        await asyncio.wait_for(process.wait(), 30)
+                    except TimeoutError:
+                        process.kill()
+                        await process.wait()
+                    print("Solver terminated.")
+                    return ""
+
+                print("Solver executed successfully.")
+                for task in done:
+                    if task is not server_check_task:
+                        result: tuple[bytes, bytes] = task.result()
+                        stdout, stderr = result
+                        print(f"stdout: {stdout.decode()}")
+                        print(f"stderr: {stderr.decode()}")
+                        return stdout.decode()
             except TimeoutError:
-                process.kill()
-                await process.wait()
-            print("Solver terminated.")
-            return ""
-        except FileNotFoundError:
-            print(
-                f"Error: Solver binary "
-                f"not found at {self.config.solver}."
-                f"Ensure the path is correct."
-            )
-            return ""
+                print(
+                    "Solver timed out after 40 minutes,"
+                    " trying to terminate solver..."
+                )
+                process.terminate()
+                try:
+                    await asyncio.wait_for(process.wait(), 30)
+                except TimeoutError:
+                    process.kill()
+                    await process.wait()
+                print("Solver terminated.")
+                return ""
+            except FileNotFoundError:
+                print(
+                    f"Error: Solver binary "
+                    f"not found at {self.config.solver}."
+                    f"Ensure the path is correct."
+                )
+                return ""
         except Exception as e:
             print(
                 f"Error: An unexpected error occurred while running the "
                 f"solver. Exception: {e}"
             )
             return ""
+        return ""
+
+    @staticmethod
+    async def check_server_status(
+        server_down_event: Event, ws: ClientConnection
+    ) -> None:
+        while not server_down_event.is_set():
+            await asyncio.sleep(10)
+            try:
+                await ws.ping()
+            except Exception:
+                print("Server is down. Initiating process termination.")
+                server_down_event.set()
+                return
 
     @staticmethod
     def parse_result(result: str) -> tuple[bool, list[int]] | None:
