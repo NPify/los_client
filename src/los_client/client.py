@@ -3,7 +3,7 @@ import base64
 import hashlib
 from asyncio import Event
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
 import pyaes  # type: ignore[import-untyped]
 from websockets.asyncio.client import ClientConnection
@@ -104,6 +104,7 @@ class Client:
                 done, pending = await asyncio.wait(
                     [
                         asyncio.create_task(process.communicate()),
+                        server_check_task,
                     ],
                     return_when=asyncio.FIRST_COMPLETED,
                     timeout=60 * 40,
@@ -123,7 +124,7 @@ class Client:
                 print("Solver executed successfully.")
                 for task in done:
                     if task is not server_check_task:
-                        result: tuple[bytes, bytes] = task.result()
+                        result = cast(tuple[bytes, bytes], task.result())
                         stdout, stderr = result
                         print(f"stdout: {stdout.decode()}")
                         print(f"stderr: {stderr.decode()}")
@@ -165,7 +166,6 @@ class Client:
             try:
                 await ws.ping()
             except Exception:
-                print("Server is down. Initiating process termination.")
                 server_down_event.set()
                 return
 
