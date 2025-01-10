@@ -32,7 +32,7 @@ class SatCLI:
 
         self.config.save_config(args.config)
 
-    async def run(self, config: CLIConfig) -> None:
+    async def run(self, config: CLIConfig, quiet: bool) -> None:
         if not (
             self.config.solver
             and self.config.output_path
@@ -74,7 +74,7 @@ class SatCLI:
                             await client.register_solver(ws)
                             close_task = asyncio.create_task(wait_for_close())
                             solver_task = asyncio.create_task(
-                                client.run_solver(ws)
+                                client.run_solver(ws, quiet)
                             )
                             await asyncio.wait(
                                 [close_task, solver_task],
@@ -108,7 +108,7 @@ async def cli(args: argparse.Namespace) -> None:
     app = SatCLI(config)
 
     if args.command == "run":
-        await app.run(app.config)
+        await app.run(app.config, args.quiet)
     elif args.command == "show":
         app.config.show_config()
     elif args.command == "set":
@@ -141,6 +141,13 @@ def main() -> None:
         dest="log_level",
         const=logging.DEBUG,
         action='store_const'
+    )
+
+    parser.add_argument(
+        "--quiet",
+        default=False,
+        action="store_true",
+        help="Disable countdown display.",
     )
 
     subparsers = parser.add_subparsers(

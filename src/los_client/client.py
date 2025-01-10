@@ -23,6 +23,7 @@ class Client:
         response = models.ResponseAdapter.validate_json(raw_response)
         if response.result == models.MessageTypes.ERROR:
             raise RuntimeError(response.error)
+        print(response.message)
         return response.message
 
     async def register_solver(self, ws: ClientConnection) -> None:
@@ -38,12 +39,17 @@ class Client:
         self.response_ok(await ws.recv())
         logger.info("Solver registered")
 
-    async def run_solver(self, ws: ClientConnection) -> None:
+    async def run_solver(self, ws: ClientConnection, quiet: bool) -> None:
         await ws.send(models.RequestInstance().model_dump_json())
         self.response_ok(await ws.recv())
         encrypted_instance = await ws.recv()
 
         logger.info("Waiting for match to start")
+
+        if not quiet:
+            # TODO: Get the time from the server
+            asyncio.create_task(self.start_countdown(1, "Match starting in "))
+
         await ws.send(models.RequestKey().model_dump_json())
         msg = self.response_ok(await ws.recv())
         keymsg = models.DecryptionKey.model_validate(msg)
@@ -53,6 +59,9 @@ class Client:
 
         with open(self.config.output / self.config.problem_path, "w") as f:
             f.write(instance.decode())
+
+        if not quiet:
+            asyncio.create_task(self.start_countdown(2700, "Match ending in "))
 
         logger.info("Running solver...")
 
@@ -164,3 +173,12 @@ class Client:
                 if values[-1] == "0":
                     break
         return satisfiable, assignments
+
+    @staticmethod
+    async def start_countdown(total_seconds: int, type: str) -> None:
+        while total_seconds > 0:
+            minutes = total_seconds // 60
+            seconds = total_seconds % 60
+            print(f"\r{type} {minutes}:{seconds}...", end="", flush=True)
+            await asyncio.sleep(1)
+            total_seconds -= 1
