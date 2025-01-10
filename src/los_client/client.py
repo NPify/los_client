@@ -1,6 +1,7 @@
 import asyncio
 import base64
 import hashlib
+import logging
 from dataclasses import dataclass
 from typing import Any
 
@@ -9,6 +10,8 @@ from websockets.asyncio.client import ClientConnection
 
 from los_client import models
 from los_client.config import CLIConfig
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -23,24 +26,24 @@ class Client:
         return response.message
 
     async def register_solver(self, ws: ClientConnection) -> None:
-        print("Waiting for registration to open")
+        logger.info("Waiting for registration to open")
         await ws.send(models.NextMatch().model_dump_json())
         self.response_ok(await ws.recv())
-        print("Registration is open, registering solver")
+        logger.info("Registration is open, registering solver")
         await ws.send(
             models.RegisterSolver(
                 solver_token=self.config.token
             ).model_dump_json()
         )
         self.response_ok(await ws.recv())
-        print("Solver registered")
+        logger.info("Solver registered")
 
     async def run_solver(self, ws: ClientConnection) -> None:
         await ws.send(models.RequestInstance().model_dump_json())
         self.response_ok(await ws.recv())
         encrypted_instance = await ws.recv()
 
-        print("Waiting for match to start")
+        logger.info("Waiting for match to start")
         await ws.send(models.RequestKey().model_dump_json())
         msg = self.response_ok(await ws.recv())
         keymsg = models.DecryptionKey.model_validate(msg)
@@ -51,7 +54,7 @@ class Client:
         with open(self.config.output / self.config.problem_path, "w") as f:
             f.write(instance.decode())
 
-        print("Running solver...")
+        logger.info("Running solver...")
 
         result = await self.execute()
 
@@ -63,7 +66,7 @@ class Client:
 
         sol = self.parse_result(result)
         if sol is None:
-            print("Solver could not determine satisfiability")
+            logger.warning("Solver could not determine satisfiability")
             return
         md5_hash = hashlib.md5(str(sol[1]).encode("utf-8")).hexdigest()
 
@@ -75,7 +78,7 @@ class Client:
             ).model_dump_json()
         )
         self.response_ok(await ws.recv())
-        print("Solution submitted")
+        logger.info("Solution submitted")
 
         if sol[0]:
             await ws.send(
@@ -84,7 +87,7 @@ class Client:
                 ).model_dump_json()
             )
             self.response_ok(await ws.recv())
-            print("Assignment submitted")
+            logger.info("Assignment submitted")
 
     async def execute(self) -> str:
         try:
@@ -99,12 +102,12 @@ class Client:
                 stdout, stderr = await asyncio.wait_for(
                     process.communicate(), 60 * 40
                 )
-                print(f"stdout: {stdout.decode()}")
-                print(f"stderr: {stderr.decode()}")
+                logger.debug(f"stdout: {stdout.decode()}")
+                logger.debug(f"stderr: {stderr.decode()}")
                 return stdout.decode()
 
             except TimeoutError:
-                print(
+                logger.warning(
                     "Solver timed out after 40 minutes,"
                     " trying to terminate solver..."
                 )
@@ -112,19 +115,19 @@ class Client:
                 return ""
 
             except asyncio.CancelledError:
-                print("Server is down, trying to terminate solver...")
+                logger.warning("Server is down, trying to terminate solver...")
                 await self.terminate(process)
                 return ""
 
             except FileNotFoundError:
-                print(
+                logger.error(
                     f"Error: Solver binary "
                     f"not found at {self.config.solver}."
                     f"Ensure the path is correct."
                 )
                 return ""
         except Exception as e:
-            print(
+            logger.error(
                 f"Error: An unexpected error occurred while running the "
                 f"solver. Exception: {e}"
             )
@@ -139,7 +142,7 @@ class Client:
         except TimeoutError:
             process.kill()
             await process.wait()
-        print("Solver terminated.")
+        logger.info("Solver terminated.")
 
     @staticmethod
     def parse_result(result: str) -> tuple[bool, list[int]] | None:
