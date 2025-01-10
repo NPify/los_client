@@ -95,39 +95,51 @@ class Client:
                 stderr=asyncio.subprocess.PIPE,
             )
 
-            stdout, stderr = await asyncio.wait_for(
-                process.communicate(), 60 * 40
-            )
-
-            print("Solver executed successfully.")
-            print(f"stdout: {stdout.decode()}")
-            print(f"stderr: {stderr.decode()}")
-            return stdout.decode()
-        except TimeoutError:
-            print("Solver timed out after 40 minutes, trying to terminate solver...")
-            process.terminate()
             try:
-                await asyncio.wait_for(
-                    process.wait(), 30
+                stdout, stderr = await asyncio.wait_for(
+                    process.communicate(), 60 * 40
                 )
+                print(f"stdout: {stdout.decode()}")
+                print(f"stderr: {stderr.decode()}")
+                return stdout.decode()
+
             except TimeoutError:
-                process.kill()
-                await process.wait()
-            print("Solver terminated.")
-            return ""
-        except FileNotFoundError:
-            print(
-                f"Error: Solver binary "
-                f"not found at {self.config.solver}."
-                f"Ensure the path is correct."
-            )
-            return ""
+                print(
+                    "Solver timed out after 40 minutes,"
+                    " trying to terminate solver..."
+                )
+                await self.terminate(process)
+                return ""
+
+            except asyncio.CancelledError:
+                print("Server is down, trying to terminate solver...")
+                await self.terminate(process)
+                return ""
+
+            except FileNotFoundError:
+                print(
+                    f"Error: Solver binary "
+                    f"not found at {self.config.solver}."
+                    f"Ensure the path is correct."
+                )
+                return ""
         except Exception as e:
             print(
                 f"Error: An unexpected error occurred while running the "
                 f"solver. Exception: {e}"
             )
             return ""
+        return ""
+
+    @staticmethod
+    async def terminate(process: asyncio.subprocess.Process) -> None:
+        process.terminate()
+        try:
+            await asyncio.wait_for(process.wait(), 30)
+        except TimeoutError:
+            process.kill()
+            await process.wait()
+        print("Solver terminated.")
 
     @staticmethod
     def parse_result(result: str) -> tuple[bool, list[int]] | None:
