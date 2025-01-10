@@ -129,15 +129,18 @@ def main() -> None:
         action="store_true",
     )
     parser.add_argument(
-        "--debug",
-        default=False,
-        action="store_true",
+        "-v", "--verbose",
+        help="Print verbose information.",
+        dest="log_level",
+        const=logging.INFO,
+        action='store_const'
     )
     parser.add_argument(
-        "--log-level",
-        default="INFO",
-        choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
-        help="Set the logging level.",
+        "--debug",
+        help="Enable debug information.",
+        dest="log_level",
+        const=logging.DEBUG,
+        action='store_const'
     )
 
     subparsers = parser.add_subparsers(
@@ -192,7 +195,7 @@ def main() -> None:
         else:
             raise e from e
     except Exception as e:
-        if not args.debug:
-            logger.error(f"Error: {e}")
-        else:
+        if args.log_level == logging.DEBUG:
             raise e from e
+        else:
+            logger.error(f"Error: {e}")
