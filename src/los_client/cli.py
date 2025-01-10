@@ -1,7 +1,7 @@
 import argparse
 import asyncio
+import logging
 import os
-import sys
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -13,6 +13,8 @@ from los_client.__about__ import __version__
 from los_client.client import Client
 from los_client.config import CLIConfig
 
+logger = logging.getLogger(__name__)
+
 
 @dataclass
 class SatCLI:
@@ -20,13 +22,13 @@ class SatCLI:
 
     def configure(self, args: argparse.Namespace) -> None:
         if args.solver:
-            print(f"Solver path set to: {self.config.solver}")
+            logger.info(f"Solver path set to: {self.config.solver}")
 
         if args.output:
-            print(f"Output path set to: {self.config.output}")
+            logger.info(f"Output path set to: {self.config.output}")
 
         if args.token:
-            print(f"Token set to: {self.config.token}")
+            logger.info(f"Token set to: {self.config.token}")
 
         self.config.save_config(args.config)
 
@@ -36,7 +38,7 @@ class SatCLI:
             and self.config.output_path
             and self.config.problem_path
         ):
-            print(
+            logger.error(
                 "Error: Please provide all paths (-path, -output, -problem) "
                 "before running."
             )
@@ -46,7 +48,9 @@ class SatCLI:
         open(self.config.output / self.config.problem_path, "w").close()
         open(self.config.output / self.config.output_path, "w").close()
 
-        print("Configuration confirmed. Ready to register and run the solver.")
+        logger.info(
+            "Configuration confirmed. Ready to register and run the solver."
+        )
 
         sleep_time = 1
         client = Client(config)
@@ -86,7 +90,7 @@ class SatCLI:
                         # so let us just repackage it for now
                         raise RuntimeError(e) from e
             except (OSError, WebSocketException) as e:
-                print(
+                logger.error(
                     f"Error: Connection failed: {e} "
                     "Waiting for server to come back up. "
                     f"Retry in {sleep_time} seconds. "
@@ -128,6 +132,12 @@ def main() -> None:
         "--debug",
         default=False,
         action="store_true",
+    )
+    parser.add_argument(
+        "--log-level",
+        default="INFO",
+        choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
+        help="Set the logging level.",
     )
 
     subparsers = parser.add_subparsers(
@@ -173,15 +183,16 @@ def main() -> None:
     if not args.command:
         print("No command given. Use --help for help.")
 
+    logging.basicConfig(level=args.log_level)
     try:
         asyncio.run(cli(args))
     except KeyboardInterrupt as e:
         if not args.debug:
-            print("Got KeyboardInterrupt, Goodbye!")
+            logger.info("Got KeyboardInterrupt, Goodbye!")
         else:
             raise e from e
     except Exception as e:
         if not args.debug:
-            print(f"Error: {e}", file=sys.stderr)
+            logger.error(f"Error: {e}")
         else:
             raise e from e
