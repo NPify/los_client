@@ -57,22 +57,21 @@ class SatCLI:
                     str(client.config.host), max_size=max_size
                 ) as ws:
                     try:
+                        sleep_time = 1
+                        models.Welcome.model_validate_json(await ws.recv())
+
                         connection_closed_event = asyncio.Event()
 
                         async def wait_for_close() -> None:
                             await ws.wait_closed()
                             connection_closed_event.set()
 
-                        sleep_time = 1
-                        models.Welcome.model_validate_json(await ws.recv())
-
-                        close_task = asyncio.create_task(wait_for_close())
-                        solver_task = asyncio.create_task(
-                            client.run_solver(ws)
-                        )
-
                         while True:
                             await client.register_solver(ws)
+                            close_task = asyncio.create_task(wait_for_close())
+                            solver_task = asyncio.create_task(
+                                client.run_solver(ws)
+                            )
                             await asyncio.wait(
                                 [close_task, solver_task],
                                 return_when=asyncio.FIRST_COMPLETED,
