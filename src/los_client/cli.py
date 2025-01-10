@@ -57,11 +57,31 @@ class SatCLI:
                     str(client.config.host), max_size=max_size
                 ) as ws:
                     try:
+                        connection_closed_event = asyncio.Event()
+
+                        async def wait_for_close() -> None:
+                            await ws.wait_closed()
+                            connection_closed_event.set()
+
                         sleep_time = 1
                         models.Welcome.model_validate_json(await ws.recv())
+
+                        close_task = asyncio.create_task(wait_for_close())
+                        solver_task = asyncio.create_task(
+                            client.run_solver(ws)
+                        )
+
                         while True:
                             await client.register_solver(ws)
-                            await client.run_solver(ws)
+                            await asyncio.wait(
+                                [close_task, solver_task],
+                                return_when=asyncio.FIRST_COMPLETED,
+                            )
+
+                            if connection_closed_event.is_set():
+                                solver_task.cancel()
+                            else:
+                                close_task.cancel()
                     except OSError as e:
                         # TODO: we do not want to catch OSErrors from inside,
                         # so let us just repackage it for now
@@ -125,7 +145,7 @@ def main() -> None:
     )
     run_parser.add_argument(
         "--token",
-        help="Token for the solver optained from 'http://los.npify.com'.",
+        help="Token for the solver obtained from 'http://los.npify.com'.",
     )
 
     # Subcommand: show
@@ -143,7 +163,7 @@ def main() -> None:
     )
     set_parser.add_argument(
         "--token",
-        help="Token for the solver optained from 'http://los.npify.com'.",
+        help="Token for the solver obtained from 'http://los.npify.com'.",
     )
 
     args = parser.parse_args()
@@ -166,3 +186,7 @@ def main() -> None:
             print(f"Error: {e}", file=sys.stderr)
         else:
             raise e from e
+
+
+if __name__ == "__main__":
+    main()

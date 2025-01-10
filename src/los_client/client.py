@@ -1,9 +1,8 @@
 import asyncio
 import base64
 import hashlib
-from asyncio import Event
 from dataclasses import dataclass
-from typing import Any, cast
+from typing import Any
 
 import pyaes  # type: ignore[import-untyped]
 from websockets.asyncio.client import ClientConnection
@@ -54,7 +53,7 @@ class Client:
 
         print("Running solver...")
 
-        result = await self.execute(ws)
+        result = await self.execute()
 
         if not result:
             return
@@ -87,9 +86,7 @@ class Client:
             self.response_ok(await ws.recv())
             print("Assignment submitted")
 
-    async def execute(self, ws: ClientConnection) -> str:
-        server_down_event = asyncio.Event()
-
+    async def execute(self) -> str:
         try:
             process = await asyncio.create_subprocess_exec(
                 self.config.solver,
@@ -97,51 +94,28 @@ class Client:
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
-            server_check_task = asyncio.create_task(
-                self.check_server_status(server_down_event, ws)
-            )
+
             try:
-                done, pending = await asyncio.wait(
-                    [
-                        asyncio.create_task(process.communicate()),
-                        server_check_task,
-                    ],
-                    return_when=asyncio.FIRST_COMPLETED,
-                    timeout=60 * 40,
+                stdout, stderr = await asyncio.wait_for(
+                    process.communicate(), 60 * 40
                 )
+                print(f"stdout: {stdout.decode()}")
+                print(f"stderr: {stderr.decode()}")
+                return stdout.decode()
 
-                if server_down_event.is_set():
-                    print("Server is down, trying to terminate solver...")
-                    process.terminate()
-                    try:
-                        await asyncio.wait_for(process.wait(), 30)
-                    except TimeoutError:
-                        process.kill()
-                        await process.wait()
-                    print("Solver terminated.")
-                    return ""
-
-                print("Solver executed successfully.")
-                for task in done:
-                    if task is not server_check_task:
-                        result = cast(tuple[bytes, bytes], task.result())
-                        stdout, stderr = result
-                        print(f"stdout: {stdout.decode()}")
-                        print(f"stderr: {stderr.decode()}")
-                        return stdout.decode()
             except TimeoutError:
                 print(
                     "Solver timed out after 40 minutes,"
                     " trying to terminate solver..."
                 )
-                process.terminate()
-                try:
-                    await asyncio.wait_for(process.wait(), 30)
-                except TimeoutError:
-                    process.kill()
-                    await process.wait()
-                print("Solver terminated.")
+                await self.terminate(process)
                 return ""
+
+            except asyncio.CancelledError:
+                print("Server is down, trying to terminate solver...")
+                await self.terminate(process)
+                return ""
+
             except FileNotFoundError:
                 print(
                     f"Error: Solver binary "
@@ -158,16 +132,14 @@ class Client:
         return ""
 
     @staticmethod
-    async def check_server_status(
-        server_down_event: Event, ws: ClientConnection
-    ) -> None:
-        while not server_down_event.is_set():
-            await asyncio.sleep(10)
-            try:
-                await ws.ping()
-            except Exception:
-                server_down_event.set()
-                return
+    async def terminate(process: asyncio.subprocess.Process) -> None:
+        process.terminate()
+        try:
+            await asyncio.wait_for(process.wait(), 30)
+        except TimeoutError:
+            process.kill()
+            await process.wait()
+        print("Solver terminated.")
 
     @staticmethod
     def parse_result(result: str) -> tuple[bool, list[int]] | None:
