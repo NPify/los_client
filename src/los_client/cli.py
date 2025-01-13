@@ -190,7 +190,7 @@ def main() -> None:
     try:
         asyncio.run(cli(args))
     except KeyboardInterrupt as e:
-        if not args.debug:
+        if args.log_level != logging.DEBUG:
             logger.info("Got KeyboardInterrupt, Goodbye!")
         else:
             raise e from e
