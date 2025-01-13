@@ -10,15 +10,8 @@ authors = [
 license = "MIT"
 requires-python = ">=3.11"
 dependencies = [
-    "cpmpy>=0.9.23",
-    "ortools>=9.11.4210",
-    "pre-commit>=4.0.1",
     "pyaes>=1.6.1",
     "pydantic>=2.10.3",
-    "pysat>=3.2.1",
-    "pytest>=8.3.3",
-    "python-sat[aiger,approxmc,cryptosat,pblib]>=1.8.dev13",
-    "setuptools>=75.6.0",
     "websockets>=14.1",
 ]
 classifiers = [
@@ -41,7 +34,10 @@ path = "src/los_client/__about__.py"
 [dependency-groups]
 dev = [
     "mypy>=1.13.0",
-    "ruff>=0.8.2",]
+    "ruff>=0.8.2",
+    "pre-commit>=4.0.1",
+    "pytest>=8.3.3",
+]
 
 [tool.mypy]
 disallow_untyped_defs = true
