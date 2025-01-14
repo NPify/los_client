@@ -23,13 +23,13 @@ class Client:
         response = models.ResponseAdapter.validate_json(raw_response)
         if response.result == models.MessageTypes.ERROR:
             raise RuntimeError(response.error)
-        print(response.message)
         return response.message
 
     async def register_solver(self, ws: ClientConnection) -> None:
         logger.info("Waiting for registration to open")
         await ws.send(models.NextMatch().model_dump_json())
         self.response_ok(await ws.recv())
+        await asyncio.sleep(0.5)
         logger.info("Registration is open, registering solver")
         await ws.send(
             models.RegisterSolver(
@@ -46,9 +46,19 @@ class Client:
 
         logger.info("Waiting for match to start")
 
+        await asyncio.sleep(0.5)
+
         if not quiet:
-            # TODO: Get the time from the server
-            asyncio.create_task(self.start_countdown(1, "Match starting in "))
+            await ws.send(models.RequestStatus().model_dump_json())
+            msg = self.response_ok(await ws.recv())
+            status = models.Status.model_validate(msg)
+            asyncio.create_task(
+                self.start_countdown(
+                    int(status.remaining), "Match starting in "
+                )
+            )
+
+        await asyncio.sleep(0.5)
 
         await ws.send(models.RequestKey().model_dump_json())
         msg = self.response_ok(await ws.recv())
@@ -175,10 +185,10 @@ class Client:
         return satisfiable, assignments
 
     @staticmethod
-    async def start_countdown(total_seconds: int, type: str) -> None:
+    async def start_countdown(total_seconds: int, cnt_type: str) -> None:
         while total_seconds > 0:
             minutes = total_seconds // 60
             seconds = total_seconds % 60
-            print(f"\r{type} {minutes}:{seconds}...", end="", flush=True)
+            print(f"\r{cnt_type} {minutes}:{seconds}...", end="", flush=True)
             await asyncio.sleep(1)
             total_seconds -= 1
