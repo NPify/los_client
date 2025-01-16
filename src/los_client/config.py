@@ -2,30 +2,31 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
-from typing import Any
+from typing import Any, List
 
-from pydantic import AnyUrl, BaseModel
+from pydantic import AnyUrl, BaseModel, Field
 
 
 class CLIConfig(BaseModel):
-    solver: Path = Path().resolve()
+    solvers: List[Path] = Field(default_factory=list)
     output_path: Path = Path("stdout.txt")
     problem_path: Path = Path("problem.cnf")
     output: Path = (Path(__file__).parent.parent.parent / "output").resolve()
-    token: str = "dummy"
+    tokens: List[str] = Field(default_factory=list)
     host: AnyUrl = AnyUrl("wss://los.npify.com/match_server/sat/")
 
     def model_post_init(self, context: Any) -> None:
         """
-        We only want to overwrite poperties if they changed because we
+        We only want to overwrite properties if they changed because we
         use __pydantic_fields_set__ to detect explicitly set fields.
         """
-        resolved = self.solver.resolve()
-        if self.solver != resolved:
-            self.solver = resolved
-        resolved = self.output.resolve()
-        if self.output != resolved:
-            self.output = resolved
+        # Resolve each solver path
+        self.solvers = [solver.resolve() for solver in self.solvers]
+
+        # Resolve the output path
+        resolved_output = self.output.resolve()
+        if self.output != resolved_output:
+            self.output = resolved_output
 
     @staticmethod
     def load_config(json_path: Path) -> CLIConfig:
@@ -52,6 +53,6 @@ class CLIConfig(BaseModel):
             print(self.model_dump_json(indent=4), file=config_file)
 
     def show_config(self) -> None:
-        print(f"Solver path: {self.solver}")
+        print(f"Solver paths: {self.solvers}")
         print(f"Output path: {self.output}")
-        print(f"Token: {self.token}")
+        print(f"Token: {self.tokens}")

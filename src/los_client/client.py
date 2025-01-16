@@ -3,7 +3,8 @@ import base64
 import hashlib
 import logging
 from dataclasses import dataclass
-from typing import Any
+from pathlib import Path
+from typing import Any, cast
 
 import pyaes  # type: ignore[import-untyped]
 from websockets.asyncio.client import ClientConnection
@@ -31,15 +32,16 @@ class Client:
         self.response_ok(await ws.recv())
         await asyncio.sleep(0.5)
         logger.info("Registration is open, registering solver")
+        # TODO: Use Matching Token
         await ws.send(
             models.RegisterSolver(
-                solver_token=self.config.token
+                solver_token=self.config.tokens[0]
             ).model_dump_json()
         )
         self.response_ok(await ws.recv())
         logger.info("Solver registered")
 
-    async def run_solver(self, ws: ClientConnection, quiet: bool) -> None:
+    async def get_instance(self, ws: ClientConnection, quiet: bool) -> bytes:
         await ws.send(models.RequestInstance().model_dump_json())
         self.response_ok(await ws.recv())
         encrypted_instance = await ws.recv()
@@ -65,8 +67,15 @@ class Client:
         keymsg = models.DecryptionKey.model_validate(msg)
         key = base64.b64decode(keymsg.key)
         aes = pyaes.AESModeOfOperationCTR(key)
-        instance = aes.decrypt(encrypted_instance)
+        return cast(bytes, aes.decrypt(encrypted_instance))
 
+    async def run_solver(
+        self,
+        ws: ClientConnection,
+        solver_path: Path,
+        instance: bytes,
+        quiet: bool,
+    ) -> None:
         with open(self.config.output / self.config.problem_path, "w") as f:
             f.write(instance.decode())
 
@@ -75,7 +84,7 @@ class Client:
 
         logger.info("Running solver...")
 
-        result = await self.execute()
+        result = await self.execute(solver_path)
 
         if not result:
             return
@@ -91,7 +100,7 @@ class Client:
 
         await ws.send(
             models.Solution(
-                solver_token=self.config.token,
+                solver_token=self.config.tokens[0],
                 is_satisfiable=sol[0],
                 assignment_hash=md5_hash,
             ).model_dump_json()
@@ -102,16 +111,16 @@ class Client:
         if sol[0]:
             await ws.send(
                 models.Assignment(
-                    solver_token=self.config.token, assignment=sol[1]
+                    solver_token=self.config.tokens[0], assignment=sol[1]
                 ).model_dump_json()
             )
             self.response_ok(await ws.recv())
             logger.info("Assignment submitted")
 
-    async def execute(self) -> str:
+    async def execute(self, solver_path: Path) -> str:
         try:
             process = await asyncio.create_subprocess_exec(
-                self.config.solver,
+                solver_path,
                 str(self.config.output / self.config.problem_path),
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
@@ -141,7 +150,7 @@ class Client:
             except FileNotFoundError:
                 logger.error(
                     f"Error: Solver binary "
-                    f"not found at {self.config.solver}."
+                    f"not found at {solver_path}."
                     f"Ensure the path is correct."
                 )
                 return ""
