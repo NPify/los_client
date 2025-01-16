@@ -22,19 +22,21 @@ class SatCLI:
 
     def configure(self, args: argparse.Namespace) -> None:
         if args.solver:
-            logger.info(f"Solver path set to: {self.config.solver}")
+            logger.info(f"Solver paths added: {args.solver}")
 
         if args.output:
             logger.info(f"Output path set to: {self.config.output}")
 
         if args.token:
-            logger.info(f"Token set to: {self.config.token}")
+            logger.info(f"Tokens added: {args.token}")
 
+        print(self.config)
         self.config.save_config(args.config)
+        # print(self.config)
 
     async def run(self, config: CLIConfig) -> None:
         if not (
-            self.config.solver
+            self.config.solvers
             and self.config.output_path
             and self.config.problem_path
         ):
@@ -70,21 +72,31 @@ class SatCLI:
                             await ws.wait_closed()
                             connection_closed_event.set()
 
+                        async def run_solvers() -> None:
+                            tasks = [
+                                asyncio.create_task(
+                                    client.run_solver(ws, x)
+                                )
+                                for x in self.config.solvers
+                            ]
+                            await asyncio.gather(*tasks)
+
+                        # TODO: Serialize recv calls
                         while True:
                             await client.register_solver(ws)
+                            instance = await client.get_instance(ws)
                             close_task = asyncio.create_task(wait_for_close())
-                            solver_task = asyncio.create_task(
-                                client.run_solver(ws)
-                            )
-                            await asyncio.wait(
-                                [close_task, solver_task],
+
+
+                            solvers_task = asyncio.create_task(run_solvers())
+
+                            done, pending = await asyncio.wait(
+                                [close_task, solvers_task],
                                 return_when=asyncio.FIRST_COMPLETED,
                             )
 
-                            if connection_closed_event.is_set():
+                            for solver_task in pending:
                                 solver_task.cancel()
-                            else:
-                                close_task.cancel()
                     except OSError as e:
                         # TODO: we do not want to catch OSErrors from inside,
                         # so let us just repackage it for now
@@ -104,7 +116,6 @@ class SatCLI:
 async def cli(args: argparse.Namespace) -> None:
     config = CLIConfig.load_config(args.config)
     config.overwrite(args)
-
     app = SatCLI(config)
 
     if args.command == "run":
@@ -156,16 +167,21 @@ def main() -> None:
     )
 
     run_parser = subparsers.add_parser(
-        "run", help="Register and run the solver."
+        "run", help="Register and run the solvers."
     )
-    run_parser.add_argument("--solver", help="Path to the SAT solver binary.")
+    run_parser.add_argument(
+        "--solvers",
+        nargs="+",
+        help="Paths to one or more SAT solver binaries.",
+    )
     run_parser.add_argument(
         "--output",
         help="Path to the file where you want the solution to be written. ",
     )
     run_parser.add_argument(
-        "--token",
-        help="Token for the solver obtained from 'http://los.npify.com'.",
+        "--tokens",
+        nargs="+",
+        help="Token for the solvers obtained from 'http://los.npify.com'.",
     )
 
     # Subcommand: show
@@ -174,15 +190,17 @@ def main() -> None:
     # Subcommand: set
     set_parser = subparsers.add_parser("set", help="Set the path.")
     set_parser.add_argument(
-        "--solver",
-        help="Path to the SAT solver execution script.",
+        "--solvers",
+        nargs="+",
+        help="Paths to one or more SAT solver binaries.",
     )
     set_parser.add_argument(
         "--output",
         help="Path to the file where you want the solution to be written.",
     )
     set_parser.add_argument(
-        "--token",
+        "--tokens",
+        nargs="+",
         help="Token for the solver obtained from 'http://los.npify.com'.",
     )
 
