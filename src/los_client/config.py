@@ -2,17 +2,16 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
-from typing import Any, List
+from typing import Any, List, Tuple
 
 from pydantic import AnyUrl, BaseModel, Field
 
 
 class CLIConfig(BaseModel):
-    solvers: List[Path] = Field(default_factory=list)
+    solver_pairs: List[Tuple[Path, str]] = Field(default_factory=list)
     output_path: Path = Path("stdout.txt")
     problem_path: Path = Path("problem.cnf")
     output: Path = (Path(__file__).parent.parent.parent / "output").resolve()
-    tokens: List[str] = Field(default_factory=list)
     host: AnyUrl = AnyUrl("wss://los.npify.com/match_server/sat/")
 
     def model_post_init(self, context: Any) -> None:
@@ -20,10 +19,9 @@ class CLIConfig(BaseModel):
         We only want to overwrite properties if they changed because we
         use __pydantic_fields_set__ to detect explicitly set fields.
         """
-        # Resolve each solver path
-        self.solvers = [solver.resolve() for solver in self.solvers]
-
-        # Resolve the output path
+        self.solver_pairs = [
+            (solver.resolve(), token) for solver, token in self.solver_pairs
+        ]
         resolved_output = self.output.resolve()
         if self.output != resolved_output:
             self.output = resolved_output
@@ -44,6 +42,18 @@ class CLIConfig(BaseModel):
             for key, value in vars(args).items()
             if value is not None
         }
+        solvers = set_args.pop("solvers", [])
+        tokens = set_args.pop("tokens", [])
+
+        if solvers and tokens:
+            if len(solvers) != len(tokens):
+                raise ValueError()
+
+            solver_pairs = [
+                (Path(solver), token) for solver, token in zip(solvers, tokens)
+            ]
+            set_args["solver_pairs"] = solver_pairs
+
         args_config = CLIConfig(**set_args)
         for field in args_config.__pydantic_fields_set__:
             setattr(self, field, getattr(args_config, field))
@@ -53,6 +63,8 @@ class CLIConfig(BaseModel):
             print(self.model_dump_json(indent=4), file=config_file)
 
     def show_config(self) -> None:
-        print(f"Solver paths: {self.solvers}")
+        print("Solver pairs (path, token):")
+        for solver, token in self.solver_pairs:
+            print(f"  Solver: {solver}, Token: {token}")
+        print(f"Problem path: {self.problem_path}")
         print(f"Output path: {self.output}")
-        print(f"Token: {self.tokens}")
