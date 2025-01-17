@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class SatCLI:
     config: CLIConfig
+    recv_lock = asyncio.Lock()
 
     def configure(self, args: argparse.Namespace) -> None:
         if args.solver:
@@ -36,7 +37,7 @@ class SatCLI:
 
     async def run(self, config: CLIConfig) -> None:
         if not (
-            self.config.solvers
+            self.config.solver_pairs
             and self.config.output_path
             and self.config.problem_path
         ):
@@ -70,7 +71,21 @@ class SatCLI:
 
                         async def wait_for_close() -> None:
                             await ws.wait_closed()
-                            connection_closed_event.set()
+
+                        while True:
+                            await client.register_solver(
+                                ws, self.config.solver_pairs
+                            )
+
+                            instance = await client.get_instance(ws)
+                            if not self.config.quiet:
+                                asyncio.create_task(
+                                    client.start_countdown(
+                                        2700, "Match ending in "
+                                    )
+                                )
+
+                            close_task = asyncio.create_task(wait_for_close())
 
                         async def run_solvers() -> None:
                             tasks = [
@@ -86,6 +101,22 @@ class SatCLI:
                             await client.register_solver(ws)
                             instance = await client.get_instance(ws)
                             close_task = asyncio.create_task(wait_for_close())
+                            async def run_solvers() -> None:
+                                tasks = []
+                                lock = asyncio.Lock()
+                                try:
+                                    tasks = [
+                                        asyncio.create_task(
+                                            client.run_solver(
+                                                ws, x, instance, lock
+                                            )
+                                        )
+                                        for x in self.config.solver_pairs
+                                    ]
+                                    await asyncio.gather(*tasks)
+                                except asyncio.CancelledError:
+                                    for t in tasks:
+                                        t.cancel()
 
 
                             solvers_task = asyncio.create_task(run_solvers())
@@ -95,8 +126,8 @@ class SatCLI:
                                 return_when=asyncio.FIRST_COMPLETED,
                             )
 
-                            for solver_task in pending:
-                                solver_task.cancel()
+                            for task in pending:
+                                task.cancel()
                     except OSError as e:
                         # TODO: we do not want to catch OSErrors from inside,
                         # so let us just repackage it for now
@@ -115,7 +146,15 @@ class SatCLI:
 
 async def cli(args: argparse.Namespace) -> None:
     config = CLIConfig.load_config(args.config)
-    config.overwrite(args)
+
+    try:
+        config.overwrite(args)
+    except ValueError:
+        logger.error(
+            "Error: Please provide the same number of solvers and tokens."
+        )
+        return
+
     app = SatCLI(config)
 
     if args.command == "run":
