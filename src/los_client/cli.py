@@ -22,14 +22,14 @@ class SatCLI:
     recv_lock = asyncio.Lock()
 
     def configure(self, args: argparse.Namespace) -> None:
-        if args.solver:
-            logger.info(f"Solver paths added: {args.solver}")
+        if args.solvers:
+            logger.info(f"Solver paths added: {args.solvers}")
 
         if args.output:
             logger.info(f"Output path set to: {self.config.output}")
 
-        if args.token:
-            logger.info(f"Tokens added: {args.token}")
+        if args.tokens:
+            logger.info(f"Tokens added: {args.tokens}")
 
         self.config.save_config(args.config)
 
@@ -127,7 +127,6 @@ class SatCLI:
 
 async def cli(args: argparse.Namespace) -> None:
     config = CLIConfig.load_config(args.config)
-
     try:
         config.overwrite(args)
     except ValueError:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 from pathlib import Path
 from typing import Any, List, Tuple
 
@@ -28,6 +29,7 @@ class CLIConfig(BaseModel):
 
     @staticmethod
     def load_config(json_path: Path) -> CLIConfig:
+        os.makedirs(json_path.parent, exist_ok=True)
         try:
             with open(json_path, "r") as config_file:
                 return CLIConfig.model_validate_json(config_file.read())
@@ -42,9 +44,9 @@ class CLIConfig(BaseModel):
             for key, value in vars(args).items()
             if value is not None
         }
+
         solvers = set_args.pop("solvers", [])
         tokens = set_args.pop("tokens", [])
-
         if solvers and tokens:
             if len(solvers) != len(tokens):
                 raise ValueError()
@@ -55,10 +57,14 @@ class CLIConfig(BaseModel):
             set_args["solver_pairs"] = solver_pairs
 
         args_config = CLIConfig(**set_args)
+
         for field in args_config.__pydantic_fields_set__:
+            if field == "solver_pairs" and not solvers and not tokens:
+                continue
             setattr(self, field, getattr(args_config, field))
 
     def save_config(self, json_path: Path) -> None:
+        os.makedirs(json_path.parent, exist_ok=True)
         with open(json_path, "w") as config_file:
             print(self.model_dump_json(indent=4), file=config_file)
 
