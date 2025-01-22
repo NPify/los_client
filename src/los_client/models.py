@@ -23,6 +23,13 @@ class MessageTypes(StrEnum):
     Solution = auto()
     Assignment = auto()
     NextMatch = auto()
+    RequestErrors = auto()
+
+
+class RequestErrors(BaseModel):
+    message_type: Literal[MessageTypes.RequestErrors] = (
+        MessageTypes.RequestErrors
+    )
 
 
 class RegisterSolver(BaseModel):
@@ -55,7 +62,7 @@ class RequestKey(BaseModel):
 
 class DecryptionKey(BaseModel):
     key: str = Field(
-        description="Base64 encoded AES/CTR key" " to decrypt the instance."
+        description="Base64 encoded AES/CTR key to decrypt the instance."
     )
 
 
@@ -67,6 +74,10 @@ class RequestInstance(BaseModel):
 
 class InstanceInfo(BaseModel):
     size: int
+
+
+class SolverErrors(BaseModel):
+    errors: dict[str, str]
 
 
 class Solution(BaseModel):
@@ -94,6 +105,7 @@ MainMessage: TypeAlias = (
     | Assignment
     | NextMatch
     | RequestInstance
+    | RequestErrors
 )
 
 MainMessageAdapter: TypeAdapter[MainMessage] = TypeAdapter(

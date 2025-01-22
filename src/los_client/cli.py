@@ -19,7 +19,6 @@ logger = logging.getLogger(__name__)
 @dataclass
 class SatCLI:
     config: CLIConfig
-    recv_lock = asyncio.Lock()
 
     def configure(self, args: argparse.Namespace) -> None:
         if args.solvers:
@@ -83,13 +82,10 @@ class SatCLI:
 
                             async def run_solvers() -> None:
                                 tasks = []
-                                lock = asyncio.Lock()
                                 try:
                                     tasks = [
                                         asyncio.create_task(
-                                            client.run_solver(
-                                                ws, x, instance, lock
-                                            )
+                                            client.run_solver(ws, x, instance)
                                         )
                                         for x in self.config.solver_pairs
                                     ]

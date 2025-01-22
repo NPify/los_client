@@ -33,7 +33,13 @@ class Client:
         logger.info("Waiting for registration to open")
         await ws.send(models.NextMatch().model_dump_json())
         self.response_ok(await ws.recv())
+
         await asyncio.sleep(0.5)
+
+        await self.query_errors(ws, solver_pairs)
+
+        await asyncio.sleep(0.5)
+
         logger.info("Registration is open, registering solvers")
         for solver_path, token in solver_pairs:
             await ws.send(
@@ -73,7 +79,6 @@ class Client:
         ws: ClientConnection,
         solver: Tuple[Path, str],
         instance: bytes,
-        lock: asyncio.Lock,
     ) -> None:
         with open(self.config.output / self.config.problem_path, "w") as f:
             f.write(instance.decode())
@@ -109,8 +114,6 @@ class Client:
                 assignment_hash=md5_hash,
             ).model_dump_json()
         )
-        async with lock:
-            self.response_ok(await ws.recv())
 
         logger.info("Solution submitted")
 
@@ -120,9 +123,6 @@ class Client:
                     solver_token=solver[1], assignment=sol[1]
                 ).model_dump_json()
             )
-            async with lock:
-                self.response_ok(await ws.recv())
-
             logger.info("Assignment submitted")
 
     async def execute(self, solver_path: Path) -> str:
@@ -200,6 +200,23 @@ class Client:
                 if values[-1] == "0":
                     break
         return satisfiable, assignments
+
+    async def query_errors(
+        self, ws: ClientConnection, solver_pairs: List[Tuple[Path, str]]
+    ) -> None:
+        await ws.send(models.RequestErrors().model_dump_json())
+        errors = models.SolverErrors.model_validate(
+            self.response_ok(await ws.recv())
+        ).errors
+
+        if errors:
+            logger.info("The following errors were reported by the server:")
+        for solver_path, token in solver_pairs:
+            if token in errors:
+                logger.info(
+                    f"Solver at {solver_path} had the following error:"
+                )
+                logger.info(f"  {errors[token]}")
 
     @staticmethod
     async def start_countdown(
