@@ -31,9 +31,7 @@ class SatCLI:
         if args.token:
             logger.info(f"Tokens added: {args.token}")
 
-        print(self.config)
         self.config.save_config(args.config)
-        # print(self.config)
 
     async def run(self, config: CLIConfig) -> None:
         if not (
@@ -66,18 +64,12 @@ class SatCLI:
                     try:
                         sleep_time = 1
                         models.Welcome.model_validate_json(await ws.recv())
-
-                        connection_closed_event = asyncio.Event()
-
-                        async def wait_for_close() -> None:
-                            await ws.wait_closed()
-
                         while True:
                             await client.register_solver(
                                 ws, self.config.solver_pairs
                             )
-
                             instance = await client.get_instance(ws)
+
                             if not self.config.quiet:
                                 asyncio.create_task(
                                     client.start_countdown(
@@ -85,22 +77,11 @@ class SatCLI:
                                     )
                                 )
 
+                            async def wait_for_close() -> None:
+                                await ws.close()
+
                             close_task = asyncio.create_task(wait_for_close())
 
-                        async def run_solvers() -> None:
-                            tasks = [
-                                asyncio.create_task(
-                                    client.run_solver(ws, x)
-                                )
-                                for x in self.config.solvers
-                            ]
-                            await asyncio.gather(*tasks)
-
-                        # TODO: Serialize recv calls
-                        while True:
-                            await client.register_solver(ws)
-                            instance = await client.get_instance(ws)
-                            close_task = asyncio.create_task(wait_for_close())
                             async def run_solvers() -> None:
                                 tasks = []
                                 lock = asyncio.Lock()
@@ -117,7 +98,6 @@ class SatCLI:
                                 except asyncio.CancelledError:
                                     for t in tasks:
                                         t.cancel()
-
 
                             solvers_task = asyncio.create_task(run_solvers())
 

@@ -73,6 +73,7 @@ class Client:
         ws: ClientConnection,
         solver: Tuple[Path, str],
         instance: bytes,
+        lock: asyncio.Lock,
     ) -> None:
         with open(self.config.output / self.config.problem_path, "w") as f:
             f.write(instance.decode())
@@ -108,7 +109,9 @@ class Client:
                 assignment_hash=md5_hash,
             ).model_dump_json()
         )
-        self.response_ok(await ws.recv())
+        async with lock:
+            self.response_ok(await ws.recv())
+
         logger.info("Solution submitted")
 
         if sol[0]:
@@ -117,7 +120,9 @@ class Client:
                     solver_token=solver[1], assignment=sol[1]
                 ).model_dump_json()
             )
-            self.response_ok(await ws.recv())
+            async with lock:
+                self.response_ok(await ws.recv())
+
             logger.info("Assignment submitted")
 
     async def execute(self, solver_path: Path) -> str:
