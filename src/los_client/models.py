@@ -1,5 +1,5 @@
 from enum import StrEnum, auto
-from typing import Annotated, Any, Literal, TypeAlias
+from typing import Annotated, Any, List, Literal, TypeAlias
 
 from pydantic import BaseModel, Field, TypeAdapter
 
@@ -77,7 +77,7 @@ class InstanceInfo(BaseModel):
 
 
 class SolverErrors(BaseModel):
-    errors: dict[str, str]
+    errors: dict[str, List[str]]
 
 
 class Solution(BaseModel):

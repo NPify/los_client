@@ -16,6 +16,10 @@ from los_client.config import CLIConfig
 logger = logging.getLogger(__name__)
 
 
+class TerminateTaskGroup(Exception):
+    pass
+
+
 @dataclass
 class SatCLI:
     config: CLIConfig
@@ -66,17 +70,21 @@ class SatCLI:
 
                         async def wait_for_close() -> None:
                             await ws.wait_closed()
+                            raise TerminateTaskGroup()
 
                         while True:
-                            await client.register_solver(
-                                ws, self.config.solver_pairs
-                            )
+                            await client.register_solvers(ws)
                             instance = await client.get_instance(ws)
 
                             if not self.config.quiet:
+                                await ws.send(
+                                    models.RequestStatus().model_dump_json()
+                                )
+                                msg = client.response_ok(await ws.recv())
+                                status = models.Status.model_validate(msg)
                                 asyncio.create_task(
                                     client.start_countdown(
-                                        2700, "Match ending in "
+                                        status.remaining, "Match ending in "
                                     )
                                 )
 
@@ -87,17 +95,23 @@ class SatCLI:
                                         asyncio.create_task(
                                             client.run_solver(ws, x, instance)
                                         )
-                                        for x in self.config.solver_pairs
+                                        for x in range(
+                                            len(self.config.solver_pairs)
+                                        )
                                     ]
                                     await asyncio.gather(*tasks)
+                                    raise TerminateTaskGroup()
                                 except asyncio.CancelledError:
                                     for t in tasks:
                                         t.cancel()
                                     raise
 
-                            async with asyncio.TaskGroup() as tg:
-                                tg.create_task(wait_for_close())
-                                tg.create_task(run_solvers())
+                            try:
+                                async with asyncio.TaskGroup() as tg:
+                                    tg.create_task(wait_for_close())
+                                    tg.create_task(run_solvers())
+                            except* TerminateTaskGroup:
+                                pass
                     except OSError as e:
                         # TODO: we do not want to catch OSErrors from inside,
                         # so let us just repackage it for now
@@ -233,3 +247,7 @@ def main() -> None:
             raise e from e
         else:
             logger.error(f"Error: {e}")
+
+
+if __name__ == "__main__":
+    main()

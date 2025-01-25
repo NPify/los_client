@@ -10,12 +10,12 @@ TEST_DATA = Path(__file__).parent / "test_data"
 def test_save_load_config() -> None:
     path = TEST_DATA / "config.json"
     config = CLIConfig.load_config(path)
-    config.solver = Path("solver_example_path")
+    config.solver_pairs = [(Path("solver"), "token")]
     config.output = Path("output_example_path")
     config.problem_path = Path("problem_example_path")
     config.save_config(path)
     config.load_config(path)
-    assert config.solver == Path("solver_example_path")
+    assert config.solver_pairs[0][0] == Path("solver_example_path")
     assert config.output == Path("output_example_path")
     assert config.problem_path == Path("problem_example_path")
 
@@ -32,7 +32,7 @@ def test_load_config_no_file() -> None:
 
 def test_save_config() -> None:
     config = CLIConfig(
-        solver=Path("solver"),
+        solver_pairs=[(Path("solver"), "token")],
         output=Path("output"),
         problem_path=Path("problem"),
     )
@@ -49,7 +49,7 @@ def test_configure_solver() -> None:
     args.token = None
     config.overwrite(args)
     cli.configure(args)
-    assert cli.config.solver == Path("new_solver").resolve()
+    assert cli.config.solver_pairs[0][0] == Path("new_solver").resolve()
 
 
 def test_configure_output() -> None:
@@ -75,7 +75,7 @@ def test_configure_problem() -> None:
     args.token = "new_token"
     config.overwrite(args)
     cli.configure(args)
-    assert cli.config.token == "new_token"
+    assert cli.config.solver_pairs[0][1] == "new_token"
 
 
 # def test_run(capfd: CaptureFixture) -> None:
