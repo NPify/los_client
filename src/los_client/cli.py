@@ -64,6 +64,10 @@ class SatCLI:
                     try:
                         sleep_time = 1
                         models.Welcome.model_validate_json(await ws.recv())
+
+                        async def wait_for_close() -> None:
+                            await ws.wait_closed()
+
                         while True:
                             await client.register_solver(
                                 ws, self.config.solver_pairs
@@ -76,11 +80,6 @@ class SatCLI:
                                         2700, "Match ending in "
                                     )
                                 )
-
-                            async def wait_for_close() -> None:
-                                await ws.close()
-
-                            close_task = asyncio.create_task(wait_for_close())
 
                             async def run_solvers() -> None:
                                 tasks = []
@@ -98,16 +97,11 @@ class SatCLI:
                                 except asyncio.CancelledError:
                                     for t in tasks:
                                         t.cancel()
+                                    raise
 
-                            solvers_task = asyncio.create_task(run_solvers())
-
-                            done, pending = await asyncio.wait(
-                                [close_task, solvers_task],
-                                return_when=asyncio.FIRST_COMPLETED,
-                            )
-
-                            for task in pending:
-                                task.cancel()
+                            async with asyncio.TaskGroup() as tg:
+                                tg.create_task(wait_for_close())
+                                tg.create_task(run_solvers())
                     except OSError as e:
                         # TODO: we do not want to catch OSErrors from inside,
                         # so let us just repackage it for now
