@@ -207,7 +207,3 @@ def main() -> None:
             raise e from e
         else:
             logger.error(f"Error: {e}")
-
-
-if __name__ == "__main__":
-    main()

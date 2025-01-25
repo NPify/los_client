@@ -78,14 +78,12 @@ def test_configure_problem() -> None:
     assert cli.config.token == "new_token"
 
 
-"""
-def test_run(capfd: CaptureFixture) -> None:
-    config = CLIConfig()
-    cli = SatCLI(config)
-    asyncio.run(cli.run(cli.config))
-    captured = capfd.readouterr()
-    assert (
-        "Configuration confirmed. Ready to register and run the solver."
-        in captured.out
-    )
-"""
+# def test_run(capfd: CaptureFixture) -> None:
+#   config = CLIConfig()
+#    cli = SatCLI(config)
+#    asyncio.run(cli.run(cli.config))
+#    captured = capfd.readouterr()
+#    assert (
+#        "Configuration confirmed. Ready to register and run the solver."
+#        in captured.out
+#    )
