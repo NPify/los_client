@@ -32,7 +32,7 @@ class SatCLI:
 
         self.config.save_config(args.config)
 
-    async def run(self, config: CLIConfig, quiet: bool) -> None:
+    async def run(self, config: CLIConfig) -> None:
         if not (
             self.config.solver
             and self.config.output_path
@@ -74,7 +74,7 @@ class SatCLI:
                             await client.register_solver(ws)
                             close_task = asyncio.create_task(wait_for_close())
                             solver_task = asyncio.create_task(
-                                client.run_solver(ws, quiet)
+                                client.run_solver(ws)
                             )
                             await asyncio.wait(
                                 [close_task, solver_task],
@@ -108,7 +108,7 @@ async def cli(args: argparse.Namespace) -> None:
     app = SatCLI(config)
 
     if args.command == "run":
-        await app.run(app.config, args.quiet)
+        await app.run(app.config)
     elif args.command == "show":
         app.config.show_config()
     elif args.command == "set":
@@ -207,3 +207,7 @@ def main() -> None:
             raise e from e
         else:
             logger.error(f"Error: {e}")
+
+
+if __name__ == "__main__":
+    main()

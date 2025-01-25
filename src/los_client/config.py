@@ -14,6 +14,7 @@ class CLIConfig(BaseModel):
     output: Path = (Path(__file__).parent.parent.parent / "output").resolve()
     token: str = "dummy"
     host: AnyUrl = AnyUrl("wss://los.npify.com/match_server/sat/")
+    quiet: bool = False
 
     def model_post_init(self, context: Any) -> None:
         """
