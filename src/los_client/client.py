@@ -4,7 +4,8 @@ import hashlib
 import logging
 import time
 from dataclasses import dataclass
-from typing import Any
+from pathlib import Path
+from typing import Any, List, Tuple, cast
 
 import pyaes  # type: ignore[import-untyped]
 from websockets.asyncio.client import ClientConnection
@@ -26,21 +27,22 @@ class Client:
             raise RuntimeError(response.error)
         return response.message
 
-    async def register_solver(self, ws: ClientConnection) -> None:
+    async def register_solver(
+        self, ws: ClientConnection, solver_pairs: List[Tuple[Path, str]]
+    ) -> None:
         logger.info("Waiting for registration to open")
         await ws.send(models.NextMatch().model_dump_json())
         self.response_ok(await ws.recv())
         await asyncio.sleep(0.5)
-        logger.info("Registration is open, registering solver")
-        await ws.send(
-            models.RegisterSolver(
-                solver_token=self.config.token
-            ).model_dump_json()
-        )
-        self.response_ok(await ws.recv())
-        logger.info("Solver registered")
+        logger.info("Registration is open, registering solvers")
+        for solver_path, token in solver_pairs:
+            await ws.send(
+                models.RegisterSolver(solver_token=token).model_dump_json()
+            )
+            self.response_ok(await ws.recv())
+            logger.info(f"Solver at {solver_path} registered")
 
-    async def run_solver(self, ws: ClientConnection) -> None:
+    async def get_instance(self, ws: ClientConnection) -> bytes:
         await ws.send(models.RequestInstance().model_dump_json())
         self.response_ok(await ws.recv())
         encrypted_instance = await ws.recv()
@@ -64,8 +66,15 @@ class Client:
         keymsg = models.DecryptionKey.model_validate(msg)
         key = base64.b64decode(keymsg.key)
         aes = pyaes.AESModeOfOperationCTR(key)
-        instance = aes.decrypt(encrypted_instance)
+        return cast(bytes, aes.decrypt(encrypted_instance))
 
+    async def run_solver(
+        self,
+        ws: ClientConnection,
+        solver: Tuple[Path, str],
+        instance: bytes,
+        lock: asyncio.Lock,
+    ) -> None:
         with open(self.config.output / self.config.problem_path, "w") as f:
             f.write(instance.decode())
 
@@ -79,7 +88,7 @@ class Client:
 
         logger.info("Running solver...")
 
-        result = await self.execute()
+        result = await self.execute(solver[0])
 
         if not result:
             return
@@ -95,27 +104,31 @@ class Client:
 
         await ws.send(
             models.Solution(
-                solver_token=self.config.token,
+                solver_token=solver[1],
                 is_satisfiable=sol[0],
                 assignment_hash=md5_hash,
             ).model_dump_json()
         )
-        self.response_ok(await ws.recv())
+        async with lock:
+            self.response_ok(await ws.recv())
+
         logger.info("Solution submitted")
 
         if sol[0]:
             await ws.send(
                 models.Assignment(
-                    solver_token=self.config.token, assignment=sol[1]
+                    solver_token=solver[1], assignment=sol[1]
                 ).model_dump_json()
             )
-            self.response_ok(await ws.recv())
+            async with lock:
+                self.response_ok(await ws.recv())
+
             logger.info("Assignment submitted")
 
-    async def execute(self) -> str:
+    async def execute(self, solver_path: Path) -> str:
         try:
             process = await asyncio.create_subprocess_exec(
-                self.config.solver,
+                solver_path,
                 str(self.config.output / self.config.problem_path),
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
@@ -145,7 +158,7 @@ class Client:
             except FileNotFoundError:
                 logger.error(
                     f"Error: Solver binary "
-                    f"not found at {self.config.solver}."
+                    f"not found at {solver_path}."
                     f"Ensure the path is correct."
                 )
                 return ""
@@ -207,3 +220,4 @@ class Client:
                 flush=True,
             )
             await asyncio.sleep(1)
+            total_seconds -= 1
