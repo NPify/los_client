@@ -1,8 +1,0 @@
-{
-    "solver": "/home/amr/PycharmProjects/LeagueOfSolvers/los_client/tests/new_solver",
-    "output_path": "stdout.txt",
-    "problem_path": "problem",
-    "output": "/home/amr/PycharmProjects/LeagueOfSolvers/los_client/tests/new_output",
-    "token": "new_token",
-    "host": "wss://los.npify.com/match_server/sat/"
-}
