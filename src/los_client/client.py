@@ -5,7 +5,7 @@ import logging
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, List, Tuple, cast
+from typing import Any, cast
 
 import pyaes  # type: ignore[import-untyped]
 from websockets.asyncio.client import ClientConnection
@@ -27,15 +27,20 @@ class Client:
             raise RuntimeError(response.error)
         return response.message
 
-    async def register_solver(
-        self, ws: ClientConnection, solver_pairs: List[Tuple[Path, str]]
-    ) -> None:
+    async def register_solvers(self, ws: ClientConnection) -> None:
         logger.info("Waiting for registration to open")
         await ws.send(models.NextMatch().model_dump_json())
         self.response_ok(await ws.recv())
+
         await asyncio.sleep(0.5)
+
+        await self.query_errors(ws)
+
+        await asyncio.sleep(0.5)
+
         logger.info("Registration is open, registering solvers")
-        for solver_path, token in solver_pairs:
+
+        for solver_path, token in self.config.solver_pairs:
             await ws.send(
                 models.RegisterSolver(solver_token=token).model_dump_json()
             )
@@ -71,9 +76,8 @@ class Client:
     async def run_solver(
         self,
         ws: ClientConnection,
-        solver: Tuple[Path, str],
+        solver_index: int,
         instance: bytes,
-        lock: asyncio.Lock,
     ) -> None:
         with open(self.config.output / self.config.problem_path, "w") as f:
             f.write(instance.decode())
@@ -87,6 +91,8 @@ class Client:
             )
 
         logger.info("Running solver...")
+
+        solver = self.config.solver_pairs[solver_index]
 
         result = await self.execute(solver[0])
 
@@ -109,8 +115,6 @@ class Client:
                 assignment_hash=md5_hash,
             ).model_dump_json()
         )
-        async with lock:
-            self.response_ok(await ws.recv())
 
         logger.info("Solution submitted")
 
@@ -120,9 +124,6 @@ class Client:
                     solver_token=solver[1], assignment=sol[1]
                 ).model_dump_json()
             )
-            async with lock:
-                self.response_ok(await ws.recv())
-
             logger.info("Assignment submitted")
 
     async def execute(self, solver_path: Path) -> str:
@@ -200,6 +201,22 @@ class Client:
                 if values[-1] == "0":
                     break
         return satisfiable, assignments
+
+    async def query_errors(self, ws: ClientConnection) -> None:
+        await ws.send(models.RequestErrors().model_dump_json())
+        errors = models.SolverErrors.model_validate(
+            self.response_ok(await ws.recv())
+        ).errors
+
+        if errors:
+            logger.error("The following errors were reported by the server:")
+        for solver_path, token in self.config.solver_pairs:
+            if token in errors:
+                logger.error(
+                    f"Solver at {solver_path} had the following errors:"
+                )
+                for error in errors[token]:
+                    logger.error(f"  - {error}")
 
     @staticmethod
     async def start_countdown(
