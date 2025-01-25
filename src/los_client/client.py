@@ -2,6 +2,7 @@ import asyncio
 import base64
 import hashlib
 import logging
+import time
 from dataclasses import dataclass
 from typing import Any
 
@@ -29,6 +30,7 @@ class Client:
         logger.info("Waiting for registration to open")
         await ws.send(models.NextMatch().model_dump_json())
         self.response_ok(await ws.recv())
+        await asyncio.sleep(0.5)
         logger.info("Registration is open, registering solver")
         await ws.send(
             models.RegisterSolver(
@@ -44,6 +46,19 @@ class Client:
         encrypted_instance = await ws.recv()
 
         logger.info("Waiting for match to start")
+
+        await asyncio.sleep(0.5)
+
+        if not self.config.quiet:
+            await ws.send(models.RequestStatus().model_dump_json())
+            msg = self.response_ok(await ws.recv())
+            status = models.Status.model_validate(msg)
+            asyncio.create_task(
+                self.start_countdown(status.remaining, "Match starting in ")
+            )
+
+        await asyncio.sleep(0.5)
+
         await ws.send(models.RequestKey().model_dump_json())
         msg = self.response_ok(await ws.recv())
         keymsg = models.DecryptionKey.model_validate(msg)
@@ -53,6 +68,14 @@ class Client:
 
         with open(self.config.output / self.config.problem_path, "w") as f:
             f.write(instance.decode())
+
+        if not self.config.quiet:
+            await ws.send(models.RequestStatus().model_dump_json())
+            msg = self.response_ok(await ws.recv())
+            status = models.Status.model_validate(msg)
+            asyncio.create_task(
+                self.start_countdown(status.remaining, "Match ending in ")
+            )
 
         logger.info("Running solver...")
 
@@ -164,3 +187,23 @@ class Client:
                 if values[-1] == "0":
                     break
         return satisfiable, assignments
+
+    @staticmethod
+    async def start_countdown(
+        total_seconds: float, stage_description: str
+    ) -> None:
+        start_time = time.monotonic()
+        end_time = start_time + total_seconds
+
+        while total_seconds > 0:
+            current_time = time.monotonic()
+            total_seconds = max(0, end_time - current_time)
+            minutes = int(total_seconds) // 60
+            seconds = int(total_seconds) % 60
+
+            print(
+                f"\r{stage_description} {minutes:02d}:{seconds:02d}...",
+                end="",
+                flush=True,
+            )
+            await asyncio.sleep(1)

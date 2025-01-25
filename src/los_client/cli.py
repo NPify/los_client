@@ -129,18 +129,26 @@ def main() -> None:
         action="store_true",
     )
     parser.add_argument(
-        "-v", "--verbose",
+        "-v",
+        "--verbose",
         help="Print verbose information.",
         dest="log_level",
         const=logging.INFO,
-        action='store_const'
+        action="store_const",
     )
     parser.add_argument(
         "--debug",
         help="Enable debug information.",
         dest="log_level",
         const=logging.DEBUG,
-        action='store_const'
+        action="store_const",
+    )
+
+    parser.add_argument(
+        "--quiet",
+        default=False,
+        action="store_true",
+        help="Disable countdown display.",
     )
 
     subparsers = parser.add_subparsers(
