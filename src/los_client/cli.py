@@ -25,6 +25,7 @@ class TerminateTaskGroup(Exception):
 class SatCLI:
     config: CLIConfig
     excluded_solvers: List[int] = field(default_factory=list)
+    single_run: bool = False
 
     def configure(self, args: argparse.Namespace) -> None:
         if args.solvers:
@@ -35,10 +36,10 @@ class SatCLI:
 
         if args.tokens:
             logger.info(f"Tokens added: {args.tokens}")
-
+        print("LMAO", args)
         self.config.save_config(args.config)
 
-    async def run(self, config: CLIConfig) -> None:
+    async def run(self) -> None:
         self.validate_config()
         self.setup_output_files()
 
@@ -47,7 +48,7 @@ class SatCLI:
         )
 
         sleep_time = 1
-        client = Client(config)
+        client = Client(self.config)
 
         while True:
             try:
@@ -72,6 +73,8 @@ class SatCLI:
                 sleep_time *= 2
                 if sleep_time > 60:
                     sleep_time = 60
+            if self.single_run:
+                break
 
     def validate_config(self) -> None:
         if not (
@@ -110,6 +113,8 @@ class SatCLI:
                     tg.create_task(self.run_solvers(client, ws, instance))
             except* TerminateTaskGroup:
                 pass
+            if self.single_run:
+                break
 
     @staticmethod
     async def wait_for_close(ws: ClientConnection) -> None:
@@ -155,7 +160,7 @@ async def cli(args: argparse.Namespace) -> None:
     app = SatCLI(config)
 
     if args.command == "run":
-        await app.run(app.config)
+        await app.run()
     elif args.command == "show":
         app.config.show_config()
     elif args.command == "set":

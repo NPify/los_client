@@ -1,0 +1,13 @@
+{
+    "solver_pairs": [
+        [
+            "/home/amr/PycharmProjects/LeagueOfSolvers/los_client/src/los_client/output/kissat/build/kissat",
+            "KissatTest:RotC6SPyWUTiE81MJ2xfRA"
+        ]
+    ],
+    "output_path": "stdout.txt",
+    "problem_path": "default_problem",
+    "output": "/home/amr/PycharmProjects/LeagueOfSolvers/los_client/output",
+    "host": "ws://localhost:8765/",
+    "quiet": false
+}
