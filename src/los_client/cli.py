@@ -12,7 +12,7 @@ from websockets.exceptions import WebSocketException
 from los_client import models
 from los_client.__about__ import __version__
 from los_client.client import Client
-from los_client.config import CLIConfig
+from los_client.config import CLIConfig, Solver
 
 logger = logging.getLogger(__name__)
 
@@ -24,24 +24,13 @@ class TerminateTaskGroup(Exception):
 @dataclass
 class SatCLI:
     config: CLIConfig
-    excluded_solvers: List[int] = field(default_factory=list)
+    excluded_solvers: List[Solver] = field(default_factory=list)
     single_run: bool = False
-
-    def configure(self, args: argparse.Namespace) -> None:
-        if args.solvers:
-            logger.info(f"Solver paths added: {args.solvers}")
-
-        if args.output:
-            logger.info(f"Output path set to: {self.config.output}")
-
-        if args.tokens:
-            logger.info(f"Tokens added: {args.tokens}")
-        print("LMAO", args)
-        self.config.save_config(args.config)
 
     async def run(self) -> None:
         self.validate_config()
-        self.setup_output_files()
+        if self.config.write_outputs:
+            self.setup_output_files()
 
         logger.info(
             "Configuration confirmed. Ready to register and run the solver."
@@ -77,36 +66,28 @@ class SatCLI:
                 break
 
     def validate_config(self) -> None:
-        if not (
-            self.config.solver_pairs
-            and self.config.output_path
-            and self.config.problem_path
-        ):
-            raise ValueError(
-                "Missing required paths: -path, -output, -problem"
-            )
+        if not self.config.solvers:
+            raise ValueError("No solvers are configured. ")
 
     def setup_output_files(self) -> None:
-        os.makedirs(self.config.output, exist_ok=True)
-        open(self.config.output / self.config.problem_path, "w").close()
-        open(self.config.output / self.config.output_path, "w").close()
+        os.makedirs(self.config.output_folder, exist_ok=True)
+        open(self.config.output_folder / self.config.problem_path, "w").close()
+        for solver in self.config.solvers:
+            if solver.output_path:
+                open(
+                    self.config.output_folder / solver.output_path, "w"
+                ).close()
 
     async def process_solvers(
         self, ws: ClientConnection, client: Client
     ) -> None:
         while True:
+            await client.trigger_countdown(ws)
+
             await client.register_solvers(ws)
+
             instance = await client.get_instance(ws)
 
-            if not self.config.quiet:
-                await ws.send(models.RequestStatus().model_dump_json())
-                msg = client.response_ok(await ws.recv())
-                status = models.Status.model_validate(msg)
-                asyncio.create_task(
-                    client.start_countdown(
-                        status.remaining, "Match ending in "
-                    )
-                )
             try:
                 async with asyncio.TaskGroup() as tg:
                     tg.create_task(self.wait_for_close(ws))
@@ -126,23 +107,25 @@ class SatCLI:
     ) -> None:
         tasks = []
         try:
-            # TODO: Change the x to the actual pair
-            x_to_task = {}
-            for x in range(len(self.config.solver_pairs)):
-                if x in self.excluded_solvers:
+            solver_to_task = {}
+            for solver in self.config.solvers:
+                if solver in self.excluded_solvers:
                     continue
-                task = asyncio.create_task(client.run_solver(ws, x, instance))
+                task = asyncio.create_task(
+                    client.run_solver(ws, solver, instance)
+                )
                 tasks.append(task)
-                x_to_task[task] = x
+                solver_to_task[task] = solver
 
             results = await asyncio.gather(*tasks, return_exceptions=True)
             for task, result in zip(tasks, results):
-                x = x_to_task[task]
+                solver = solver_to_task[task]
                 if isinstance(result, FileNotFoundError):
-                    self.excluded_solvers.append(x)
+                    self.excluded_solvers.append(solver)
                 elif isinstance(result, TimeoutError):
                     logger.warning(
-                        f"Solver at {x} timed out. Will attempt to run it "
+                        f"Solver at {solver.solver_path} timed out. "
+                        f"Will attempt to run it "
                         f"again next match."
                     )
 
@@ -155,16 +138,21 @@ class SatCLI:
 
 async def cli(args: argparse.Namespace) -> None:
     config = CLIConfig.load_config(args.config)
-    config.overwrite(args)
-
     app = SatCLI(config)
+    config.overwrite(args)
 
     if args.command == "run":
         await app.run()
     elif args.command == "show":
-        app.config.show_config()
-    elif args.command == "set":
-        app.configure(args)
+        app.config.show_config(args.config)
+    elif args.command in [
+        "add",
+        "delete",
+        "modify",
+        "output_folder",
+        "problem_path",
+    ]:
+        app.config.save_config(args.config)
 
 
 def main() -> None:
@@ -195,54 +183,78 @@ def main() -> None:
         const=logging.DEBUG,
         action="store_const",
     )
-
     parser.add_argument(
         "--quiet",
         default=False,
         action="store_true",
         help="Disable countdown display.",
     )
+    parser.add_argument(
+        "--write_outputs",
+        default=False,
+        action="store_true",
+        help="Write problem and solver outputs.",
+    )
 
     subparsers = parser.add_subparsers(
         dest="command", help="Available commands"
     )
 
-    run_parser = subparsers.add_parser(
-        "run", help="Register and run the solvers."
-    )
-    run_parser.add_argument(
-        "--solvers",
-        nargs="+",
-        help="Paths to one or more SAT solver binaries.",
-    )
-    run_parser.add_argument(
-        "--output",
-        help="Path to the file where you want the solution to be written. ",
-    )
-    run_parser.add_argument(
-        "--tokens",
-        nargs="+",
-        help="Token for the solvers obtained from 'http://los.npify.com'.",
-    )
+    # Subcommand: run
+    subparsers.add_parser("run", help="Register and run the solvers.")
 
     # Subcommand: show
     subparsers.add_parser("show", help="Show the current configuration.")
 
-    # Subcommand: set
-    set_parser = subparsers.add_parser("set", help="Set the path.")
-    set_parser.add_argument(
-        "--solvers",
-        nargs="+",
-        help="Paths to one or more SAT solver binaries.",
+    # Subcommand: add
+    add_parser = subparsers.add_parser("add", help="Add a new solver.")
+    add_parser.add_argument(
+        "--solver_path", required=True, help="Path to the SAT solver binary."
     )
-    set_parser.add_argument(
-        "--output",
-        help="Path to the file where you want the solution to be written.",
+    add_parser.add_argument(
+        "--token", required=True, help="Token for the solver."
     )
-    set_parser.add_argument(
-        "--tokens",
-        nargs="+",
-        help="Token for the solver obtained from 'http://los.npify.com'.",
+    add_parser.add_argument("--output_path", help="Path to the output file.")
+
+    # Subcommand: delete
+    delete_parser = subparsers.add_parser("delete", help="Delete a solver.")
+    delete_parser.add_argument(
+        "--token", required=True, help="Token of the solver to delete."
+    )
+
+    # Subcommand: modify
+    modify_parser = subparsers.add_parser(
+        "modify", help="Modify an existing solver."
+    )
+    modify_parser.add_argument(
+        "--token", required=True, help="Token of the solver to modify."
+    )
+    modify_parser.add_argument(
+        "--new_solver", help="New path to the SAT solver binary."
+    )
+    modify_parser.add_argument("--new_token", help="New token for the solver.")
+    modify_parser.add_argument(
+        "--new_output", help="New path to the output file."
+    )
+
+    output_folder_parser = subparsers.add_parser(
+        "output_folder",
+        help="Update the output folder path in the configuration file.",
+    )
+
+    output_folder_parser.add_argument(
+        "output_folder",
+        help="New output folder path to set in the configuration.",
+    )
+
+    problem_path_parser = subparsers.add_parser(
+        "problem_path",
+        help="Update the problem path in the configuration file.",
+    )
+
+    problem_path_parser.add_argument(
+        "problem_path",
+        help="New problem directory path to set in the configuration.",
     )
 
     args = parser.parse_args()
@@ -256,9 +268,9 @@ def main() -> None:
     logging.basicConfig(level=args.log_level)
     try:
         asyncio.run(cli(args))
-    except KeyboardInterrupt as e:
+    except (KeyboardInterrupt, asyncio.CancelledError) as e:
         if args.log_level != logging.DEBUG:
-            logger.info("Got KeyboardInterrupt, Goodbye!")
+            logger.info("Got Interrupted, Goodbye!")
         else:
             raise e from e
     except Exception as e:
