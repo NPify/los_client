@@ -1,19 +1,27 @@
-# def test_register_and_run(capfd: CaptureFixture) -> None:
-#    config = CLIConfig()
-#    cli = SatCLI(config)
-#    cli.config.solver = Path("solver")
-#    cli.config.output = Path("output")
-#    cli.config.token = "D1BwDpACZ4kIUnY_QEohmg"
-#    client = Client(cli.config)
+import asyncio
+from pathlib import Path
 
-#    async def helper() -> None:
-#        async with connect(str(client.config.host)) as ws:
-#            models.Welcome.model_validate_json(await ws.recv())
-#            await client.register_solver(ws)
-#            await client.run_solver(ws,True)
+from websockets import connect
 
-#    asyncio.run(helper())
+from los_client import models
+from los_client.cli import SatCLI
+from los_client.client import Client
+from los_client.config import CLIConfig
 
-#    captured = capfd.readouterr()
-#    assert "Solver registered" in captured.out
-#    assert "Solution submitted" in captured.out
+TEST_INPUT = Path(__file__).parent / "test_input"
+
+
+def test_register_and_run() -> None:
+    config_path = TEST_INPUT / "run_test_config.json"
+    config = CLIConfig.load_config(config_path)
+    cli = SatCLI(config)
+    client = Client(cli.config)
+
+    async def helper() -> None:
+        async with connect(str(client.config.host)) as ws:
+            models.Welcome.model_validate_json(await ws.recv())
+            await client.register_solvers(ws)
+            instance = await client.get_instance(ws)
+            await client.run_solver(ws, 0, instance)
+
+    asyncio.run(helper())
