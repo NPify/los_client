@@ -107,7 +107,7 @@ class SatCLI:
     ) -> None:
         tasks = []
         try:
-            solver_to_task = {}
+            task_to_solver = {}
             for solver in self.config.solvers:
                 if solver in self.excluded_solvers:
                     continue
@@ -115,11 +115,11 @@ class SatCLI:
                     client.run_solver(ws, solver, instance)
                 )
                 tasks.append(task)
-                solver_to_task[task] = solver
+                task_to_solver[task] = solver
 
             results = await asyncio.gather(*tasks, return_exceptions=True)
             for task, result in zip(tasks, results):
-                solver = solver_to_task[task]
+                solver = task_to_solver[task]
                 if isinstance(result, FileNotFoundError):
                     self.excluded_solvers.append(solver)
                 elif isinstance(result, TimeoutError):
@@ -138,8 +138,8 @@ class SatCLI:
 
 async def cli(args: argparse.Namespace) -> None:
     config = CLIConfig.load_config(args.config)
-    app = SatCLI(config)
     config.overwrite(args)
+    app = SatCLI(config)
 
     if args.command == "run":
         await app.run()
@@ -208,33 +208,30 @@ def main() -> None:
 
     # Subcommand: add
     add_parser = subparsers.add_parser("add", help="Add a new solver.")
+    add_parser.add_argument("token", help="Token for the solver.")
     add_parser.add_argument(
-        "--solver_path", required=True, help="Path to the SAT solver binary."
+        "solver",
+        help="Path to the SAT solver binary.",
     )
-    add_parser.add_argument(
-        "--token", required=True, help="Token for the solver."
-    )
-    add_parser.add_argument("--output_path", help="Path to the output file.")
+    add_parser.add_argument("--output", help="Path to the output file.")
 
     # Subcommand: delete
     delete_parser = subparsers.add_parser("delete", help="Delete a solver.")
-    delete_parser.add_argument(
-        "--token", required=True, help="Token of the solver to delete."
-    )
+    delete_parser.add_argument("token", help="Token of the solver to delete.")
 
     # Subcommand: modify
     modify_parser = subparsers.add_parser(
         "modify", help="Modify an existing solver."
     )
+    modify_parser.add_argument("token", help="Token of the solver to modify.")
     modify_parser.add_argument(
-        "--token", required=True, help="Token of the solver to modify."
+        "--solver", help="Path to the SAT solver binary.", dest="new_solver"
     )
     modify_parser.add_argument(
-        "--new_solver", help="New path to the SAT solver binary."
+        "--token", help="Token for the solver.", dest="new_token"
     )
-    modify_parser.add_argument("--new_token", help="New token for the solver.")
     modify_parser.add_argument(
-        "--new_output", help="New path to the output file."
+        "--output", help="Path to the output file.", dest="new_output"
     )
 
     output_folder_parser = subparsers.add_parser(

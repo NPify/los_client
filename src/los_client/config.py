@@ -66,11 +66,9 @@ class CLIConfig(BaseModel):
             if args.token not in [solver.token for solver in self.solvers]:
                 self.solvers.append(
                     Solver(
-                        solver_path=Path(args.solver_path),
+                        solver_path=Path(args.solver),
                         token=args.token,
-                        output_path=Path(args.output_path)
-                        if args.output_path
-                        else None,
+                        output_path=Path(args.output) if args.output else None,
                     )
                 )
             else:
@@ -121,7 +119,7 @@ class CLIConfig(BaseModel):
         print("Solvers:")
         for solver in self.solvers:
             print(
-                f" - Solver: {solver.token}, Token: {solver.token}, "
+                f" - Solver: {solver.solver_path}, Token: {solver.token}, "
                 f"Output: {solver.output_path}"
             )
         print(f"Problem path: {self.problem_path}")
