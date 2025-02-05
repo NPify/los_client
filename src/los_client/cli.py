@@ -211,8 +211,15 @@ def main() -> None:
     add_parser.add_argument(
         "solver",
         help="Path to the SAT solver binary.",
+        type=Path,
+        default=None,
     )
-    add_parser.add_argument("--output", help="Path to the output file.")
+    add_parser.add_argument(
+        "--output",
+        help="Path to the output file.",
+        type=Path,
+        default=None,
+    )
 
     # Subcommand: delete
     delete_parser = subparsers.add_parser("delete", help="Delete a solver.")
@@ -224,13 +231,21 @@ def main() -> None:
     )
     modify_parser.add_argument("token", help="Token of the solver to modify.")
     modify_parser.add_argument(
-        "--solver", help="Path to the SAT solver binary.", dest="new_solver"
+        "--solver",
+        help="Path to the SAT solver binary.",
+        dest="new_solver",
+        type=Path,
+        default=None,
     )
     modify_parser.add_argument(
         "--token", help="Token for the solver.", dest="new_token"
     )
     modify_parser.add_argument(
-        "--output", help="Path to the output file.", dest="new_output"
+        "--output",
+        help="Path to the output file.",
+        dest="new_output",
+        type=Path,
+        default=None,
     )
 
     output_folder_parser = subparsers.add_parser(

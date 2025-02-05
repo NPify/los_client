@@ -91,9 +91,9 @@ class CLIConfig(BaseModel):
         else:
             self.solvers.append(
                 Solver(
-                    solver_path=Path(args.solver),
+                    solver_path=args.solver,
                     token=args.token,
-                    output_path=Path(args.output) if args.output else None,
+                    output_path=args.output if args.output else None,
                 )
             )
 
@@ -111,9 +111,9 @@ class CLIConfig(BaseModel):
         for solver in self.solvers:
             if solver.token == args.token:
                 if args.new_solver is not None:
-                    solver.solver_path = Path(args.new_solver)
+                    solver.solver_path = args.new_solver
                 if args.new_output is not None:
-                    solver.output_path = Path(args.new_output)
+                    solver.output_path = args.new_output
                 if args.new_token is not None:
                     solver.token = args.new_token
 
