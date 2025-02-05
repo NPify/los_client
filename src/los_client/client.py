@@ -32,11 +32,7 @@ class Client:
         await ws.send(models.NextMatch().model_dump_json())
         self.response_ok(await ws.recv())
 
-        await asyncio.sleep(0.5)
-
         await self.query_errors(ws)
-
-        await asyncio.sleep(0.5)
 
         logger.info("Registration is open, registering solvers")
 
@@ -54,8 +50,6 @@ class Client:
 
         logger.info("Waiting for match to start")
 
-        await asyncio.sleep(0.5)
-
         if not self.config.quiet:
             await ws.send(models.RequestStatus().model_dump_json())
             msg = self.response_ok(await ws.recv())
@@ -63,8 +57,6 @@ class Client:
             asyncio.create_task(
                 self.start_countdown(status.remaining, "Match starting in ")
             )
-
-        await asyncio.sleep(0.5)
 
         await ws.send(models.RequestKey().model_dump_json())
         msg = self.response_ok(await ws.recv())
@@ -96,15 +88,12 @@ class Client:
 
         result = await self.execute(solver[0])
 
-        if not result:
-            return
-
         with open(self.config.output / self.config.output_path, "w") as f:
             f.write(result)
 
         sol = self.parse_result(result)
         if sol is None:
-            logger.warning("Solver could not determine satisfiability")
+            logger.info("Solver could not determine satisfiability")
             return
         md5_hash = hashlib.md5(str(sol[1]).encode("utf-8")).hexdigest()
 
@@ -127,49 +116,38 @@ class Client:
             logger.info("Assignment submitted")
 
     async def execute(self, solver_path: Path) -> str:
+        process = await asyncio.create_subprocess_exec(
+            solver_path,
+            str(self.config.output / self.config.problem_path),
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+
         try:
-            process = await asyncio.create_subprocess_exec(
-                solver_path,
-                str(self.config.output / self.config.problem_path),
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
+            stdout, stderr = await asyncio.wait_for(
+                process.communicate(), 60 * 40
             )
+            logger.debug(f"stdout: {stdout.decode()}")
+            logger.debug(f"stderr: {stderr.decode()}")
+            return stdout.decode()
 
-            try:
-                stdout, stderr = await asyncio.wait_for(
-                    process.communicate(), 60 * 40
-                )
-                logger.debug(f"stdout: {stdout.decode()}")
-                logger.debug(f"stderr: {stderr.decode()}")
-                return stdout.decode()
+        except TimeoutError:
+            await self.terminate(process)
+            raise
 
-            except TimeoutError:
-                logger.warning(
-                    "Solver timed out after 40 minutes,"
-                    " trying to terminate solver..."
-                )
-                await self.terminate(process)
-                return ""
+        except asyncio.CancelledError:
+            logger.error("Server is down, trying to terminate solver...")
+            await self.terminate(process)
+            raise
 
-            except asyncio.CancelledError:
-                logger.warning("Server is down, trying to terminate solver...")
-                await self.terminate(process)
-                return ""
-
-            except FileNotFoundError:
-                logger.error(
-                    f"Error: Solver binary "
-                    f"not found at {solver_path}."
-                    f"Ensure the path is correct."
-                )
-                return ""
-        except Exception as e:
+        except FileNotFoundError:
             logger.error(
-                f"Error: An unexpected error occurred while running the "
-                f"solver. Exception: {e}"
+                f"Solver binary "
+                f"not found at {solver_path}."
+                f"Ensure the path is correct. Pausing this solver's"
+                f" execution in future matches."
             )
-            return ""
-        return ""
+            raise
 
     @staticmethod
     async def terminate(process: asyncio.subprocess.Process) -> None:
@@ -223,7 +201,7 @@ class Client:
         total_seconds: float, stage_description: str
     ) -> None:
         start_time = time.monotonic()
-        end_time = start_time + total_seconds
+        end_time = start_time + total_seconds - 2
 
         while total_seconds > 0:
             current_time = time.monotonic()
@@ -237,4 +215,3 @@ class Client:
                 flush=True,
             )
             await asyncio.sleep(1)
-            total_seconds -= 1

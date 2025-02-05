@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import argparse
+import logging
 import os
 from pathlib import Path
 from typing import Any, List, Tuple
 
 from pydantic import AnyUrl, BaseModel, Field
+
+logger = logging.getLogger(__name__)
 
 
 class CLIConfig(BaseModel):
@@ -50,7 +53,9 @@ class CLIConfig(BaseModel):
         tokens = set_args.pop("tokens", [])
         if solvers and tokens:
             if len(solvers) != len(tokens):
-                raise ValueError()
+                raise ValueError(
+                    "Please provide the same number of solvers and tokens."
+                )
 
             solver_pairs = [
                 (Path(solver), token) for solver, token in zip(solvers, tokens)
@@ -70,8 +75,8 @@ class CLIConfig(BaseModel):
             print(self.model_dump_json(indent=4), file=config_file)
 
     def show_config(self) -> None:
-        print("Solver pairs (path, token):")
+        logger.info("Solver pairs (path, token):")
         for solver, token in self.solver_pairs:
-            print(f"  Solver: {solver}, Token: {token}")
-        print(f"Problem path: {self.problem_path}")
-        print(f"Output path: {self.output}")
+            logger.info(f"  Solver: {solver}, Token: {token}")
+        logger.info(f"Problem path: {self.problem_path}")
+        logger.info(f"Output path: {self.output}")

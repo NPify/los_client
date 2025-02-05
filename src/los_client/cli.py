@@ -2,10 +2,11 @@ import argparse
 import asyncio
 import logging
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
+from typing import List
 
-from websockets.asyncio.client import connect
+from websockets.asyncio.client import ClientConnection, connect
 from websockets.exceptions import WebSocketException
 
 from los_client import models
@@ -23,6 +24,7 @@ class TerminateTaskGroup(Exception):
 @dataclass
 class SatCLI:
     config: CLIConfig
+    excluded_solvers: List[int] = field(default_factory=list)
 
     def configure(self, args: argparse.Namespace) -> None:
         if args.solvers:
@@ -37,20 +39,8 @@ class SatCLI:
         self.config.save_config(args.config)
 
     async def run(self, config: CLIConfig) -> None:
-        if not (
-            self.config.solver_pairs
-            and self.config.output_path
-            and self.config.problem_path
-        ):
-            logger.error(
-                "Error: Please provide all paths (-path, -output, -problem) "
-                "before running."
-            )
-            return
-
-        os.makedirs(self.config.output, exist_ok=True)
-        open(self.config.output / self.config.problem_path, "w").close()
-        open(self.config.output / self.config.output_path, "w").close()
+        self.validate_config()
+        self.setup_output_files()
 
         logger.info(
             "Configuration confirmed. Ready to register and run the solver."
@@ -58,60 +48,16 @@ class SatCLI:
 
         sleep_time = 1
         client = Client(config)
+
         while True:
             try:
-                max_size = 1024 * 1024 * 32
                 async with connect(
-                    str(client.config.host), max_size=max_size
+                    str(client.config.host), max_size=1024 * 1024 * 32
                 ) as ws:
                     try:
                         sleep_time = 1
                         models.Welcome.model_validate_json(await ws.recv())
-
-                        async def wait_for_close() -> None:
-                            await ws.wait_closed()
-                            raise TerminateTaskGroup()
-
-                        while True:
-                            await client.register_solvers(ws)
-                            instance = await client.get_instance(ws)
-
-                            if not self.config.quiet:
-                                await ws.send(
-                                    models.RequestStatus().model_dump_json()
-                                )
-                                msg = client.response_ok(await ws.recv())
-                                status = models.Status.model_validate(msg)
-                                asyncio.create_task(
-                                    client.start_countdown(
-                                        status.remaining, "Match ending in "
-                                    )
-                                )
-
-                            async def run_solvers() -> None:
-                                tasks = []
-                                try:
-                                    tasks = [
-                                        asyncio.create_task(
-                                            client.run_solver(ws, x, instance)
-                                        )
-                                        for x in range(
-                                            len(self.config.solver_pairs)
-                                        )
-                                    ]
-                                    await asyncio.gather(*tasks)
-                                    raise TerminateTaskGroup()
-                                except asyncio.CancelledError:
-                                    for t in tasks:
-                                        t.cancel()
-                                    raise
-
-                            try:
-                                async with asyncio.TaskGroup() as tg:
-                                    tg.create_task(wait_for_close())
-                                    tg.create_task(run_solvers())
-                            except* TerminateTaskGroup:
-                                pass
+                        await self.process_solvers(ws, client)
                     except OSError as e:
                         # TODO: we do not want to catch OSErrors from inside,
                         # so let us just repackage it for now
@@ -127,16 +73,84 @@ class SatCLI:
                 if sleep_time > 60:
                     sleep_time = 60
 
+    def validate_config(self) -> None:
+        if not (
+            self.config.solver_pairs
+            and self.config.output_path
+            and self.config.problem_path
+        ):
+            raise ValueError(
+                "Missing required paths: -path, -output, -problem"
+            )
+
+    def setup_output_files(self) -> None:
+        os.makedirs(self.config.output, exist_ok=True)
+        open(self.config.output / self.config.problem_path, "w").close()
+        open(self.config.output / self.config.output_path, "w").close()
+
+    async def process_solvers(
+        self, ws: ClientConnection, client: Client
+    ) -> None:
+        while True:
+            await client.register_solvers(ws)
+            instance = await client.get_instance(ws)
+
+            if not self.config.quiet:
+                await ws.send(models.RequestStatus().model_dump_json())
+                msg = client.response_ok(await ws.recv())
+                status = models.Status.model_validate(msg)
+                asyncio.create_task(
+                    client.start_countdown(
+                        status.remaining, "Match ending in "
+                    )
+                )
+            try:
+                async with asyncio.TaskGroup() as tg:
+                    tg.create_task(self.wait_for_close(ws))
+                    tg.create_task(self.run_solvers(client, ws, instance))
+            except* TerminateTaskGroup:
+                pass
+
+    @staticmethod
+    async def wait_for_close(ws: ClientConnection) -> None:
+        await ws.wait_closed()
+        raise TerminateTaskGroup()
+
+    async def run_solvers(
+        self, client: Client, ws: ClientConnection, instance: bytes
+    ) -> None:
+        tasks = []
+        try:
+            # TODO: Change the x to the actual pair
+            x_to_task = {}
+            for x in range(len(self.config.solver_pairs)):
+                if x in self.excluded_solvers:
+                    continue
+                task = asyncio.create_task(client.run_solver(ws, x, instance))
+                tasks.append(task)
+                x_to_task[task] = x
+
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            for task, result in zip(tasks, results):
+                x = x_to_task[task]
+                if isinstance(result, FileNotFoundError):
+                    self.excluded_solvers.append(x)
+                elif isinstance(result, TimeoutError):
+                    logger.error(
+                        f"Solver at {x} timed out. Will attempt to run it "
+                        f"again next match."
+                    )
+
+            raise TerminateTaskGroup()
+        except asyncio.CancelledError:
+            for t in tasks:
+                t.cancel()
+            raise
+
 
 async def cli(args: argparse.Namespace) -> None:
     config = CLIConfig.load_config(args.config)
-    try:
-        config.overwrite(args)
-    except ValueError:
-        logger.error(
-            "Error: Please provide the same number of solvers and tokens."
-        )
-        return
+    config.overwrite(args)
 
     app = SatCLI(config)
 
@@ -247,7 +261,3 @@ def main() -> None:
             raise e from e
         else:
             logger.error(f"Error: {e}")
-
-
-if __name__ == "__main__":
-    main()
