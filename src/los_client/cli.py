@@ -138,13 +138,12 @@ class SatCLI:
 
 async def cli(args: argparse.Namespace) -> None:
     config = CLIConfig.load_config(args.config)
-    config.overwrite(args)
-    app = SatCLI(config)
 
     if args.command == "run":
+        app = SatCLI(config)
         await app.run()
     elif args.command == "show":
-        app.config.show_config(args.config)
+        config.show_config(args.config)
     elif args.command in [
         "add",
         "delete",
@@ -152,7 +151,7 @@ async def cli(args: argparse.Namespace) -> None:
         "output_folder",
         "problem_path",
     ]:
-        app.config.save_config(args.config)
+        config.set_fields(args)
 
 
 def main() -> None:

@@ -5,7 +5,7 @@ import logging
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, List
+from typing import Any, List, assert_never
 
 from pydantic import AnyUrl, BaseModel, Field
 
@@ -55,52 +55,26 @@ class CLIConfig(BaseModel):
             config.save_config(json_path)
             return config
 
-    def overwrite(self, args: argparse.Namespace) -> None:
+    def set_fields(self, args: argparse.Namespace) -> None:
         set_args = {
             key: value
             for key, value in vars(args).items()
             if value is not None
         }
 
-        if args.command == "add":
-            if args.token not in [solver.token for solver in self.solvers]:
-                self.solvers.append(
-                    Solver(
-                        solver_path=Path(args.solver),
-                        token=args.token,
-                        output_path=Path(args.output) if args.output else None,
-                    )
-                )
-            else:
-                raise ValueError(
-                    f"Solver with token {args.token} already exists."
-                )
-
-        elif args.command == "delete":
-            if args.token not in [solver.token for solver in self.solvers]:
-                raise ValueError(
-                    f"Solver with token {args.token} does not exist."
-                )
-            else:
-                self.solvers = [
-                    solver
-                    for solver in self.solvers
-                    if solver.token != args.token
-                ]
-
-        elif args.command == "modify":
-            if args.token not in [solver.token for solver in self.solvers]:
-                raise ValueError(
-                    f"Solver with token {args.token} does not exist."
-                )
-            for solver in self.solvers:
-                if solver.token == args.token:
-                    if args.new_solver is not None:
-                        solver.solver_path = Path(args.new_solver)
-                    if args.new_output is not None:
-                        solver.output_path = Path(args.new_output)
-                    if args.new_token is not None:
-                        solver.token = args.new_token
+        match args.command:
+            case "add":
+                self.add_solver(args)
+            case "delete":
+                self.delete_solver(args)
+            case "modify":
+                self.modify_solver(args)
+            case "output_folder":
+                pass
+            case "problem_path":
+                pass
+            case other:
+                assert_never(other)
 
         set_args["solvers"] = self.solvers
 
@@ -108,6 +82,40 @@ class CLIConfig(BaseModel):
 
         for field in args_config.__pydantic_fields_set__:
             setattr(self, field, getattr(args_config, field))
+
+        self.save_config(args.config)
+
+    def add_solver(self, args: argparse.Namespace) -> None:
+        if args.token in [solver.token for solver in self.solvers]:
+            raise ValueError(f"Solver with token {args.token} already exists.")
+        else:
+            self.solvers.append(
+                Solver(
+                    solver_path=Path(args.solver),
+                    token=args.token,
+                    output_path=Path(args.output) if args.output else None,
+                )
+            )
+
+    def delete_solver(self, args: argparse.Namespace) -> None:
+        if args.token not in [solver.token for solver in self.solvers]:
+            raise ValueError(f"Solver with token {args.token} does not exist.")
+        else:
+            self.solvers = [
+                solver for solver in self.solvers if solver.token != args.token
+            ]
+
+    def modify_solver(self, args: argparse.Namespace) -> None:
+        if args.token not in [solver.token for solver in self.solvers]:
+            raise ValueError(f"Solver with token {args.token} does not exist.")
+        for solver in self.solvers:
+            if solver.token == args.token:
+                if args.new_solver is not None:
+                    solver.solver_path = Path(args.new_solver)
+                if args.new_output is not None:
+                    solver.output_path = Path(args.new_output)
+                if args.new_token is not None:
+                    solver.token = args.new_token
 
     def save_config(self, json_path: Path) -> None:
         os.makedirs(json_path.parent, exist_ok=True)

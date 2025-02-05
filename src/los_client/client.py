@@ -5,7 +5,7 @@ import logging
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, assert_never, cast
 
 import pyaes  # type: ignore[import-untyped]
 from websockets.asyncio.client import ClientConnection
@@ -218,11 +218,15 @@ class Client:
             status.remaining = max(0, end_time - current_time)
             minutes = int(status.remaining) // 60
             seconds = int(status.remaining) % 60
-            message = (
-                "Match ending in "
-                if status.state == models.State.running
-                else "Match starting in "
-            )
+            match status.state:
+                case models.State.running:
+                    message = "Match ending in "
+                case models.State.registration:
+                    message = "Match starting in "
+                case models.State.finished:
+                    message = "Match has ended"
+                case other:
+                    assert_never(other)
 
             print(
                 f"\r{message} {minutes:02d}:{seconds:02d}...",
