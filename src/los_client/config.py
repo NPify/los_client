@@ -3,33 +3,46 @@ from __future__ import annotations
 import argparse
 import logging
 import os
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, List, Tuple
+from typing import Any, List, assert_never
 
 from pydantic import AnyUrl, BaseModel, Field
 
 logger = logging.getLogger(__name__)
 
 
+@dataclass
+class Solver:
+    solver_path: Path
+    token: str
+    output_path: Path | None
+
+
 class CLIConfig(BaseModel):
-    solver_pairs: List[Tuple[Path, str]] = Field(default_factory=list)
-    output_path: Path = Path("stdout.txt")
+    solvers: List[Solver] = Field(default_factory=list)
     problem_path: Path = Path("problem.cnf")
-    output: Path = (Path(__file__).parent.parent.parent / "output").resolve()
+    output_folder: Path = (
+        Path(__file__).parent.parent.parent / "output"
+    ).resolve()
     host: AnyUrl = AnyUrl("wss://los.npify.com/match_server/sat/")
     quiet: bool = False
+    write_outputs: bool = False
 
     def model_post_init(self, context: Any) -> None:
         """
         We only want to overwrite properties if they changed because we
         use __pydantic_fields_set__ to detect explicitly set fields.
         """
-        self.solver_pairs = [
-            (solver.resolve(), token) for solver, token in self.solver_pairs
+        self.solvers = [
+            Solver(
+                solver.solver_path.resolve(), solver.token, solver.output_path
+            )
+            for solver in self.solvers
         ]
-        resolved_output = self.output.resolve()
-        if self.output != resolved_output:
-            self.output = resolved_output
+        resolved_output = self.output_folder.resolve()
+        if self.output_folder != resolved_output:
+            self.output_folder = resolved_output
 
     @staticmethod
     def load_config(json_path: Path) -> CLIConfig:
@@ -42,41 +55,80 @@ class CLIConfig(BaseModel):
             config.save_config(json_path)
             return config
 
-    def overwrite(self, args: argparse.Namespace) -> None:
+    def set_fields(self, args: argparse.Namespace) -> None:
         set_args = {
             key: value
             for key, value in vars(args).items()
             if value is not None
         }
 
-        solvers = set_args.pop("solvers", [])
-        tokens = set_args.pop("tokens", [])
-        if solvers and tokens:
-            if len(solvers) != len(tokens):
-                raise ValueError(
-                    "Please provide the same number of solvers and tokens."
-                )
+        match args.command:
+            case "add":
+                self.add_solver(args)
+            case "delete":
+                self.delete_solver(args)
+            case "modify":
+                self.modify_solver(args)
+            case "output_folder":
+                pass
+            case "problem_path":
+                pass
+            case other:
+                assert_never(other)
 
-            solver_pairs = [
-                (Path(solver), token) for solver, token in zip(solvers, tokens)
-            ]
-            set_args["solver_pairs"] = solver_pairs
+        set_args["solvers"] = self.solvers
 
         args_config = CLIConfig(**set_args)
 
         for field in args_config.__pydantic_fields_set__:
-            if field == "solver_pairs" and not solvers and not tokens:
-                continue
             setattr(self, field, getattr(args_config, field))
+
+        self.save_config(args.config)
+
+    def add_solver(self, args: argparse.Namespace) -> None:
+        if args.token in [solver.token for solver in self.solvers]:
+            raise ValueError(f"Solver with token {args.token} already exists.")
+        else:
+            self.solvers.append(
+                Solver(
+                    solver_path=args.solver,
+                    token=args.token,
+                    output_path=args.output if args.output else None,
+                )
+            )
+
+    def delete_solver(self, args: argparse.Namespace) -> None:
+        if args.token not in [solver.token for solver in self.solvers]:
+            raise ValueError(f"Solver with token {args.token} does not exist.")
+        else:
+            self.solvers = [
+                solver for solver in self.solvers if solver.token != args.token
+            ]
+
+    def modify_solver(self, args: argparse.Namespace) -> None:
+        if args.token not in [solver.token for solver in self.solvers]:
+            raise ValueError(f"Solver with token {args.token} does not exist.")
+        for solver in self.solvers:
+            if solver.token == args.token:
+                if args.new_solver is not None:
+                    solver.solver_path = args.new_solver
+                if args.new_output is not None:
+                    solver.output_path = args.new_output
+                if args.new_token is not None:
+                    solver.token = args.new_token
 
     def save_config(self, json_path: Path) -> None:
         os.makedirs(json_path.parent, exist_ok=True)
         with open(json_path, "w") as config_file:
             print(self.model_dump_json(indent=4), file=config_file)
 
-    def show_config(self) -> None:
-        logger.info("Solver pairs (path, token):")
-        for solver, token in self.solver_pairs:
-            logger.info(f"  Solver: {solver}, Token: {token}")
-        logger.info(f"Problem path: {self.problem_path}")
-        logger.info(f"Output path: {self.output}")
+    def show_config(self, config_path: Path) -> None:
+        print(f"Showing configuration file at: {config_path}")
+        print("Solvers:")
+        for solver in self.solvers:
+            print(
+                f" - Solver: {solver.solver_path}, Token: {solver.token}, "
+                f"Output: {solver.output_path}"
+            )
+        print(f"Problem path: {self.problem_path}")
+        print(f"Output Folder: {self.output_folder}")

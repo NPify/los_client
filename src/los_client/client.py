@@ -5,15 +5,21 @@ import logging
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, assert_never, cast
 
 import pyaes  # type: ignore[import-untyped]
 from websockets.asyncio.client import ClientConnection
 
 from los_client import models
-from los_client.config import CLIConfig
+from los_client.config import CLIConfig, Solver
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class SAT_solution:
+    satisfiable: bool
+    assignment: list[int]
 
 
 @dataclass
@@ -36,12 +42,14 @@ class Client:
 
         logger.info("Registration is open, registering solvers")
 
-        for solver_path, token in self.config.solver_pairs:
+        for solver in self.config.solvers:
             await ws.send(
-                models.RegisterSolver(solver_token=token).model_dump_json()
+                models.RegisterSolver(
+                    solver_token=solver.token
+                ).model_dump_json()
             )
             self.response_ok(await ws.recv())
-            logger.info(f"Solver at {solver_path} registered")
+            logger.info(f"Solver at {solver.solver_path} registered")
 
     async def get_instance(self, ws: ClientConnection) -> bytes:
         await ws.send(models.RequestInstance().model_dump_json())
@@ -50,13 +58,7 @@ class Client:
 
         logger.info("Waiting for match to start")
 
-        if not self.config.quiet:
-            await ws.send(models.RequestStatus().model_dump_json())
-            msg = self.response_ok(await ws.recv())
-            status = models.Status.model_validate(msg)
-            asyncio.create_task(
-                self.start_countdown(status.remaining, "Match starting in ")
-            )
+        await self.trigger_countdown(ws)
 
         await ws.send(models.RequestKey().model_dump_json())
         msg = self.response_ok(await ws.recv())
@@ -68,49 +70,46 @@ class Client:
     async def run_solver(
         self,
         ws: ClientConnection,
-        solver_index: int,
+        solver: Solver,
         instance: bytes,
     ) -> None:
-        with open(self.config.output / self.config.problem_path, "w") as f:
-            f.write(instance.decode())
-
-        if not self.config.quiet:
-            await ws.send(models.RequestStatus().model_dump_json())
-            msg = self.response_ok(await ws.recv())
-            status = models.Status.model_validate(msg)
-            asyncio.create_task(
-                self.start_countdown(status.remaining, "Match ending in ")
-            )
+        if self.config.write_outputs:
+            with open(
+                self.config.output_folder / self.config.problem_path, "w"
+            ) as f:
+                f.write(instance.decode())
 
         logger.info("Running solver...")
 
-        solver = self.config.solver_pairs[solver_index]
+        result = await self.execute(solver.solver_path)
 
-        result = await self.execute(solver[0])
-
-        with open(self.config.output / self.config.output_path, "w") as f:
-            f.write(result)
+        if self.config.write_outputs and solver.output_path:
+            with open(
+                self.config.output_folder / solver.output_path, "w"
+            ) as f:
+                f.write(result)
 
         sol = self.parse_result(result)
+
         if sol is None:
             logger.info("Solver could not determine satisfiability")
             return
-        md5_hash = hashlib.md5(str(sol[1]).encode("utf-8")).hexdigest()
+        md5_hash = hashlib.md5(str(sol.assignment).encode("utf-8")).hexdigest()
 
         await ws.send(
             models.Solution(
-                solver_token=solver[1],
-                is_satisfiable=sol[0],
+                solver_token=solver.token,
+                is_satisfiable=sol.satisfiable,
                 assignment_hash=md5_hash,
             ).model_dump_json()
         )
 
         logger.info("Solution submitted")
 
-        if sol[0]:
+        if sol.satisfiable:
             await ws.send(
                 models.Assignment(
-                    solver_token=solver[1], assignment=sol[1]
+                    solver_token=solver.token, assignment=sol.assignment
                 ).model_dump_json()
             )
             logger.info("Assignment submitted")
@@ -118,7 +117,7 @@ class Client:
     async def execute(self, solver_path: Path) -> str:
         process = await asyncio.create_subprocess_exec(
             solver_path,
-            str(self.config.output / self.config.problem_path),
+            str(self.config.output_folder / self.config.problem_path),
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
@@ -160,7 +159,7 @@ class Client:
         logger.info("Solver terminated.")
 
     @staticmethod
-    def parse_result(result: str) -> tuple[bool, list[int]] | None:
+    def parse_result(result: str) -> SAT_solution | None:
         satisfiable: bool = False
         assignments: list[int] = []
         for line in result.split("\n"):
@@ -170,7 +169,7 @@ class Client:
                 satisfiable = True
                 continue
             if line.startswith("s UNSATISFIABLE"):
-                return False, assignments
+                return SAT_solution(False, assignments)
             if line.startswith("s UNKNOWN"):
                 return None
             if line.startswith("v"):
@@ -178,7 +177,7 @@ class Client:
                 assignments += list(map(int, values))
                 if values[-1] == "0":
                     break
-        return satisfiable, assignments
+        return SAT_solution(satisfiable, assignments)
 
     async def query_errors(self, ws: ClientConnection) -> None:
         await ws.send(models.RequestErrors().model_dump_json())
@@ -188,29 +187,45 @@ class Client:
 
         if errors:
             logger.error("The following errors were reported by the server:")
-        for solver_path, token in self.config.solver_pairs:
-            if token in errors:
+        for solver in self.config.solvers:
+            if solver.token in errors:
                 logger.error(
-                    f"Solver at {solver_path} had the following errors:"
+                    f"Solver at {solver.solver_path} had the following errors:"
                 )
-                for error in errors[token]:
+                for error in errors[solver.token]:
                     logger.error(f"  - {error}")
+
+    async def trigger_countdown(self, ws: ClientConnection) -> None:
+        if not self.config.quiet:
+            await ws.send(models.RequestStatus().model_dump_json())
+            msg = self.response_ok(await ws.recv())
+            status = models.Status.model_validate(msg)
+            asyncio.create_task(self.start_countdown(status))
 
     @staticmethod
     async def start_countdown(
-        total_seconds: float, stage_description: str
+        status: models.Status,
     ) -> None:
         start_time = time.monotonic()
-        end_time = start_time + total_seconds - 2
+        end_time = start_time + status.remaining - 1
 
-        while total_seconds > 0:
+        while status.remaining > 0:
             current_time = time.monotonic()
-            total_seconds = max(0, end_time - current_time)
-            minutes = int(total_seconds) // 60
-            seconds = int(total_seconds) % 60
+            status.remaining = max(0, end_time - current_time)
+            minutes = int(status.remaining) // 60
+            seconds = int(status.remaining) % 60
+            match status.state:
+                case models.State.running:
+                    message = "Match ending in "
+                case models.State.registration:
+                    message = "Match starting in "
+                case models.State.finished:
+                    message = "Match has ended"
+                case other:
+                    assert_never(other)
 
             print(
-                f"\r{stage_description} {minutes:02d}:{seconds:02d}...",
+                f"\r{message} {minutes:02d}:{seconds:02d}...",
                 end="",
                 flush=True,
             )
