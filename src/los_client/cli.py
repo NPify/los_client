@@ -141,7 +141,7 @@ class SatCLI:
                 if isinstance(result, FileNotFoundError):
                     self.excluded_solvers.append(x)
                 elif isinstance(result, TimeoutError):
-                    logger.warning(
+                    logger.error(
                         f"Solver at {x} timed out. Will attempt to run it "
                         f"again next match."
                     )
