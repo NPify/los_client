@@ -131,20 +131,16 @@ class Client:
             return stdout.decode()
 
         except TimeoutError:
-            logger.warning(
-                "Solver timed out after 40 minutes,"
-                " trying to terminate solver..."
-            )
             await self.terminate(process)
             raise
 
         except asyncio.CancelledError:
-            logger.warning("Server is down, trying to terminate solver...")
+            logger.error("Server is down, trying to terminate solver...")
             await self.terminate(process)
             raise
 
         except FileNotFoundError:
-            logger.warning(
+            logger.error(
                 f"Solver binary "
                 f"not found at {solver_path}."
                 f"Ensure the path is correct. Pausing this solver's"

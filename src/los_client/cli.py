@@ -123,10 +123,9 @@ class SatCLI:
                 if isinstance(result, FileNotFoundError):
                     self.excluded_solvers.append(solver)
                 elif isinstance(result, TimeoutError):
-                    logger.warning(
+                    logger.error(
                         f"Solver at {solver.solver_path} timed out. "
                         f"Will attempt to run it "
-                        f"again next match."
                     )
 
             raise TerminateTaskGroup()
