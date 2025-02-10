@@ -16,9 +16,10 @@ def new_config() -> CLIConfig:
     return CLIConfig(
         solvers=[
             Solver(
-                Path("default_solver"),
-                "default_token",
-                Path("default_output_file"),
+                solver_path=Path("default_solver"),
+                args=[],
+                token="default_token",
+                output_path=Path("default_output_file"),
             )
         ],
         output_folder=Path("default_output"),
@@ -43,9 +44,6 @@ def test_load_config_no_file() -> None:
 
     config = CLIConfig.load_config(config_path)
     assert config.solvers == []
-    assert config.output_folder == PosixPath(
-        "/home/amr/PycharmProjects/LeagueOfSolvers/los_client/output"
-    )
     assert config.problem_path == PosixPath("problem.cnf")
     assert config.host == AnyUrl("wss://los.npify.com/match_server/sat/")
     assert not config.quiet
@@ -77,7 +75,7 @@ def test_configure_solver() -> None:
         new_output=None,
     )
 
-    cli.config.overwrite(args)
+    cli.config.set_fields(args)
     cli.config.save_config(config_path)
     updated_config = CLIConfig.load_config(config_path)
     assert (
@@ -99,7 +97,7 @@ def test_configure_output_folder() -> None:
         output_folder=Path("new_output"),
     )
 
-    cli.config.overwrite(args)
+    cli.config.set_fields(args)
     cli.config.save_config(config_path)
     updated_config = CLIConfig.load_config(config_path)
     assert updated_config.output_folder == Path("new_output").resolve()
@@ -118,7 +116,7 @@ def test_configure_problem_path() -> None:
         problem_path=Path("new_problem"),
     )
 
-    cli.config.overwrite(args)
+    cli.config.set_fields(args)
     cli.config.save_config(config_path)
     updated_config = CLIConfig.load_config(config_path)
     assert updated_config.problem_path == Path("new_problem")

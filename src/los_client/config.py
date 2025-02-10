@@ -5,7 +5,7 @@ import logging
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, List, assert_never
+from typing import Any, List
 
 from pydantic import AnyUrl, BaseModel, Field
 
@@ -20,30 +20,24 @@ class Solver:
     output_path: Path | None
 
 
+DEFAULT_OUTPUT = (Path(__file__).parent.parent.parent / "output").resolve()
+
+
 class CLIConfig(BaseModel):
     solvers: List[Solver] = Field(default_factory=list)
     problem_path: Path = Path("problem.cnf")
-    output_folder: Path = (
-        Path(__file__).parent.parent.parent / "output"
-    ).resolve()
+    output_folder: Path = DEFAULT_OUTPUT
     host: AnyUrl = AnyUrl("wss://los.npify.com/match_server/sat/")
     quiet: bool = False
     write_outputs: bool = False
 
     def model_post_init(self, context: Any) -> None:
-        """
-        We only want to overwrite properties if they changed because we
-        use __pydantic_fields_set__ to detect explicitly set fields.
-        """
-        self.solvers = [
-            Solver(
-                solver.solver_path.resolve(), solver.token, solver.output_path
-            )
-            for solver in self.solvers
-        ]
-        resolved_output = self.output_folder.resolve()
-        if self.output_folder != resolved_output:
-            self.output_folder = resolved_output
+        for solver in self.solvers:
+            solver.solver_path = solver.solver_path.resolve()
+            if solver.output_path:
+                solver.output_path = solver.output_path.resolve()
+
+        self.output_folder = self.output_folder.resolve()
 
     @staticmethod
     def load_config(json_path: Path) -> CLIConfig:
@@ -57,12 +51,6 @@ class CLIConfig(BaseModel):
             return config
 
     def set_fields(self, args: argparse.Namespace) -> None:
-        set_args = {
-            key: value
-            for key, value in vars(args).items()
-            if value is not None
-        }
-
         match args.command:
             case "add":
                 self.add_solver(args)
@@ -71,18 +59,11 @@ class CLIConfig(BaseModel):
             case "modify":
                 self.modify_solver(args)
             case "output_folder":
-                pass
+                self.output_folder = args.output_folder
             case "problem_path":
-                pass
-            case other:
-                assert_never(other)
-
-        set_args["solvers"] = self.solvers
-
-        args_config = CLIConfig(**set_args)
-
-        for field in args_config.__pydantic_fields_set__:
-            setattr(self, field, getattr(args_config, field))
+                self.problem_path = args.problem_path
+            case _:
+                raise AssertionError("Unknown command.")
 
         self.save_config(args.config)
 
@@ -93,6 +74,7 @@ class CLIConfig(BaseModel):
             self.solvers.append(
                 Solver(
                     solver_path=args.solver,
+                    args=[],
                     token=args.token,
                     output_path=args.output if args.output else None,
                 )

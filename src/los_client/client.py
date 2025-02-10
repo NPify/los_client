@@ -4,7 +4,6 @@ import hashlib
 import logging
 import time
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any, assert_never, cast
 
 import pyaes  # type: ignore[import-untyped]
@@ -115,10 +114,12 @@ class Client:
             logger.info("Assignment submitted")
 
     async def execute(self, solver: Solver) -> str:
-        args = list(solver.args) + str(self.config.output_folder / self.config.problem_path)
+        args = list(solver.args) + [
+            str(self.config.output_folder / self.config.problem_path)
+        ]
 
         process = await asyncio.create_subprocess_exec(
-            solver.path,
+            solver.solver_path,
             *args,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
@@ -144,7 +145,7 @@ class Client:
         except FileNotFoundError:
             logger.error(
                 f"Solver binary "
-                f"not found at {solver_path}."
+                f"not found at {solver.solver_path}."
                 f"Ensure the path is correct. Pausing this solver's"
                 f" execution in future matches."
             )
