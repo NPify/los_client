@@ -2,6 +2,7 @@ import asyncio
 import base64
 import hashlib
 import logging
+import lzma
 import time
 from dataclasses import dataclass
 from typing import Any, assert_never, cast
@@ -64,7 +65,7 @@ class Client:
         keymsg = models.DecryptionKey.model_validate(msg)
         key = base64.b64decode(keymsg.key)
         aes = pyaes.AESModeOfOperationCTR(key)
-        return cast(bytes, aes.decrypt(encrypted_instance))
+        return cast(bytes, lzma.decompress(aes.decrypt(encrypted_instance)))
 
     async def run_solver(
         self,
