@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 class Solver:
     solver_path: Path
     token: str
+    args: list[str]
     output_path: Path | None
 
 

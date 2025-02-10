@@ -81,7 +81,7 @@ class Client:
 
         logger.info("Running solver...")
 
-        result = await self.execute(solver.solver_path)
+        result = await self.execute(solver)
 
         if self.config.write_outputs and solver.output_path:
             with open(
@@ -114,10 +114,12 @@ class Client:
             )
             logger.info("Assignment submitted")
 
-    async def execute(self, solver_path: Path) -> str:
+    async def execute(self, solver: Solver) -> str:
+        args = list(solver.args) + str(self.config.output_folder / self.config.problem_path)
+
         process = await asyncio.create_subprocess_exec(
-            solver_path,
-            str(self.config.output_folder / self.config.problem_path),
+            solver.path,
+            *args,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
