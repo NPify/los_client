@@ -29,7 +29,6 @@ Register a solver and copy the token at [los.npify.com](http://los.npify.com).
 
 #### Global Options
 ```
-
 --config PATH    # Configuration file (default: configs/default.json)
 --version       # Show version information
 -v, --verbose   # Print verbose information
@@ -71,13 +70,13 @@ Set Problem Path
 ```
 los_client problem_path [problem_path]
 ```
+#### Post Configuration
 Once you've finished configuring the solvers you can run the client
 ```
 los_client run
 ```
 To show the current configuration
 ```
-
 los_client show
 ```
 
