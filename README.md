@@ -29,8 +29,7 @@ Register a solver and copy the token at [los.npify.com](http://los.npify.com).
 
 To use this client to the League of Solvers your solver needs to
 
- * accept an instances in DIMACS CNF format ([description]
-(https://people.sc.fsu.edu/~jburkardt/data/cnf/cnf.html)) as the only parameter
+ * accept an instances in DIMACS CNF format ([description](https://people.sc.fsu.edu/~jburkardt/data/cnf/cnf.html)) as the only parameter
  * produce output that is compatible with the [SAT competition](https://satcompetition.github.io/2024/output.html)
 
 If your solver is not compatible, you either need to write a script to adapt
