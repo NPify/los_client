@@ -275,16 +275,17 @@ def main() -> None:
     if not args.command:
         print("No command given. Use --help for help.")
 
-    logging.basicConfig(level=args.log_level)
+    fmt = "%(asctime)s [%(levelname)s] %(filename)s:%(lineno)d %(message)s"
+    logging.basicConfig(level=args.log_level, format=fmt)
     try:
         asyncio.run(cli(args))
-    except (KeyboardInterrupt, asyncio.CancelledError) as e:
+    except KeyboardInterrupt as e:
         if args.log_level != logging.DEBUG:
             logger.info("Got Interrupted, Goodbye!")
         else:
             raise e from e
-    except Exception as e:
-        if args.log_level == logging.DEBUG:
-            raise e from e
-        else:
-            logger.error(f"Error: {e}")
+    # except Exception as e:
+    #     if args.log_level == logging.DEBUG:
+    #         raise e from e
+    #     else:
+    #         logger.error(f"Error: {e}")
