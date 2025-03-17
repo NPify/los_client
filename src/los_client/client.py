@@ -161,7 +161,7 @@ class Client:
             )
             await asyncio.sleep(1)
 
-            print(
-                "\r",
-                flush=True,
-            )
+        print(
+            "\r",
+            flush=True,
+        )
