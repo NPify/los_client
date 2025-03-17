@@ -5,6 +5,8 @@ from pathlib import Path
 
 from los_client.client import Client, SAT_solution
 from los_client.config import CLIConfig, Solver
+from los_client.exceptions import SolverParseResultFailed, SolverNotFound
+
 
 logger = logging.getLogger(__name__)
 
@@ -65,13 +67,8 @@ class SolverRunner:
             await self.terminate(process)
             raise
 
-        except FileNotFoundError:
-            logger.error(
-                f"Solver binary "
-                f"not found at {self.solver.solver_path}. "
-                f"Ensure the path is correct."
-            )
-            raise
+        except FileNotFoundError as e:
+            raise SolverNotFound(f"Solver binary {self.solver.solver_path} not found.") from e
 
     @staticmethod
     async def terminate(process: asyncio.subprocess.Process) -> None:
@@ -108,6 +105,6 @@ class SolverRunner:
                     break
 
         if not parsed_successfull:
-            raise RuntimeError("Failed to parse SAT solver output.")
+            raise SolverParseResultFailed(f"Failed to parse solver output for {self.solver.solver_path}.")
 
         return SAT_solution(satisfiable, assignments)

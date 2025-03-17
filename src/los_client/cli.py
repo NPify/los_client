@@ -13,7 +13,7 @@ from los_client.__about__ import __version__
 from los_client.client import Client
 from los_client.config import CLIConfig, Solver
 from los_client.run_solver import SolverRunner
-
+from los_client.exceptions import SolverException
 logger = logging.getLogger(__name__)
 
 
@@ -67,6 +67,12 @@ class SatCLI:
                 break
 
     def validate_config(self) -> None:
+        try:
+            open(self.config.output_folder / self.config.problem_path, "w").close()
+        except OSError as e:
+            e.add_note("Can't write problem file. You may need to adjust the configuration.")
+            raise
+
         if not self.config.solvers:
             raise ValueError("No solvers are configured. ")
 
@@ -112,7 +118,8 @@ class SatCLI:
 
         try:
             await runner.run_solver(instance_path)
-        except FileNotFoundError:
+        except SolverException as e:
+            logging.error(str(e))
             logger.warning(
                 f"Excluding solver from further runs: {solver.solver_path}"
             )
