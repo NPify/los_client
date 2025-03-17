@@ -85,11 +85,15 @@ class SatCLI:
             await self.client.register_solvers()
 
             instance = await self.client.get_instance()
+            with open(
+                self.config.output_folder / self.config.problem_path, "wb"
+            ) as f:
+                f.write(instance)
 
             try:
                 async with asyncio.TaskGroup() as tg:
                     tg.create_task(self.stop_on_connection_close())
-                    tg.create_task(self.run_solvers(instance))
+                    tg.create_task(self.run_solvers())
             except* TerminateTaskGroup:
                 pass
             if self.single_run:

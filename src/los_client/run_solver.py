@@ -16,13 +16,10 @@ class SolverRunner:
 
     async def run_solver(
         self,
-        instance: bytes,
     ) -> None:
-        with open(
-            self.config.output_folder / self.config.problem_path, "w"
-        ) as f:
-            f.write(instance.decode())
-
+        """
+        Run instance stored at self.config.output_folder / self.config.problem_path.
+        """
         logger.info("Running solver...")
 
         result = await self.execute()
