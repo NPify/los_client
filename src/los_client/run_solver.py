@@ -18,11 +18,10 @@ class SolverRunner:
         self,
         instance: bytes,
     ) -> None:
-        if self.config.write_outputs:
-            with open(
-                self.config.output_folder / self.config.problem_path, "w"
-            ) as f:
-                f.write(instance.decode())
+        with open(
+            self.config.output_folder / self.config.problem_path, "w"
+        ) as f:
+            f.write(instance.decode())
 
         logger.info("Running solver...")
 
