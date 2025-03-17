@@ -63,6 +63,9 @@ class Client:
         await ws.send(models.RequestKey().model_dump_json())
         msg = self.response_ok(await ws.recv())
         keymsg = models.DecryptionKey.model_validate(msg)
+        return await asyncio.to_thread(self.decrypt, encrypted_instance, keymsg)
+
+    def decrypt(self, encrypted_instance: bytes, keymsg: models.DecryptionKey) -> bytes:
         key = base64.b64decode(keymsg.key)
         aes = pyaes.AESModeOfOperationCTR(key)
         return cast(bytes, lzma.decompress(aes.decrypt(encrypted_instance)))
@@ -206,10 +209,12 @@ class Client:
             status = models.Status.model_validate(msg)
             asyncio.create_task(self.start_countdown(status))
 
-    @staticmethod
     async def start_countdown(
-        status: models.Status,
+        self, status: models.Status,
     ) -> None:
+        if self.config.quiet:
+            return
+
         start_time = time.monotonic()
         end_time = start_time + status.remaining - 1
 

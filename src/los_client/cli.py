@@ -182,12 +182,6 @@ def main() -> None:
         action="store_const",
     )
     parser.add_argument(
-        "--quiet",
-        default=False,
-        action="store_true",
-        help="Disable countdown display.",
-    )
-    parser.add_argument(
         "--write_outputs",
         default=False,
         action="store_true",
