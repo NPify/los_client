@@ -80,20 +80,21 @@ class SatCLI:
                 ).close()
 
     async def process_solvers(self) -> None:
-        while True:
+        while len(self.excluded_solvers) < len(self.config.solvers):
             await self.client.trigger_countdown()
             await self.client.register_solvers()
 
             instance = await self.client.get_instance()
-            with open(
-                self.config.output_folder / self.config.problem_path, "wb"
-            ) as f:
+            instance_path = (
+                self.config.output_folder / self.config.problem_path
+            )
+            with open(instance_path, "wb") as f:
                 f.write(instance)
 
             try:
                 async with asyncio.TaskGroup() as tg:
                     tg.create_task(self.stop_on_connection_close())
-                    tg.create_task(self.run_solvers())
+                    tg.create_task(self.run_solvers(instance_path))
             except* TerminateTaskGroup:
                 pass
             if self.single_run:
@@ -103,23 +104,26 @@ class SatCLI:
         await self.client.wait_closed()
         raise TerminateTaskGroup()
 
-    async def run_solver(self, solver: Solver, instance: bytes) -> None:
+    async def run_solver(self, solver: Solver, instance_path: Path) -> None:
         if solver in self.excluded_solvers:
             return
 
         runner = SolverRunner(self.config, solver, self.client)
 
         try:
-            await runner.run_solver(instance)
+            await runner.run_solver(instance_path)
         except FileNotFoundError:
+            logger.warning(
+                f"Excluding solver from further runs: {solver.solver_path}"
+            )
             self.excluded_solvers.append(solver)
         except TimeoutError:
             logger.info(f"Solver at {solver.solver_path} timed out.")
 
-    async def run_solvers(self, instance: bytes) -> None:
+    async def run_solvers(self, instance_path: Path) -> None:
         async with asyncio.TaskGroup() as tg:
             for solver in self.config.solvers:
-                tg.create_task(self.run_solver(solver, instance))
+                tg.create_task(self.run_solver(solver, instance_path))
 
         raise TerminateTaskGroup()
 

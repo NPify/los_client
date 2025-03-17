@@ -1,6 +1,7 @@
 import asyncio
 import logging
 from dataclasses import dataclass
+from pathlib import Path
 
 from los_client.client import Client, SAT_solution
 from los_client.config import CLIConfig, Solver
@@ -14,15 +15,10 @@ class SolverRunner:
     solver: Solver
     client: Client
 
-    async def run_solver(
-        self,
-    ) -> None:
-        """
-        Run instance stored at self.config.output_folder / self.config.problem_path.
-        """
-        logger.info("Running solver...")
+    async def run_solver(self, instance_path: Path) -> None:
+        logger.info(f"Running solver {self.solver.solver_path}.")
 
-        result = await self.execute()
+        result = await self.execute(instance_path)
 
         if self.config.write_outputs and self.solver.output_path:
             with open(
@@ -33,24 +29,27 @@ class SolverRunner:
         solution = self.parse_result(result)
 
         if solution is None:
-            logger.info("Solver could not determine satisfiability")
+            logger.info(f"Unknown answer from {self.solver.solver_path}.")
             return
+
+        if solution.satisfiable:
+            logger.info(f"SAT answer from {self.solver.solver_path}.")
+        else:
+            logger.info(f"UNSSAT answer from {self.solver.solver_path}.")
 
         await self.client.submit_solution(self.solver.token, solution)
 
-    async def execute(self) -> str:
-        args = list(self.solver.args) + [
-            str(self.config.output_folder / self.config.problem_path)
-        ]
-
-        process = await asyncio.create_subprocess_exec(
-            self.solver.solver_path,
-            *args,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
+    async def execute(self, path: Path) -> str:
+        args = list(self.solver.args) + [str(path)]
 
         try:
+            process = await asyncio.create_subprocess_exec(
+                self.solver.solver_path,
+                *args,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+
             stdout, stderr = await asyncio.wait_for(
                 process.communicate(), 60 * 40
             )
@@ -69,9 +68,8 @@ class SolverRunner:
         except FileNotFoundError:
             logger.error(
                 f"Solver binary "
-                f"not found at {self.solver.solver_path}."
-                f"Ensure the path is correct. Pausing this solver's"
-                f" execution in future matches."
+                f"not found at {self.solver.solver_path}. "
+                f"Ensure the path is correct."
             )
             raise
 
