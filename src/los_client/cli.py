@@ -6,13 +6,13 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import List
 
-from websockets.asyncio.client import ClientConnection, connect
+from websockets.asyncio.client import connect
 from websockets.exceptions import WebSocketException
 
-from los_client import models
 from los_client.__about__ import __version__
 from los_client.client import Client
 from los_client.config import CLIConfig, Solver
+from los_client.run_solver import SolverRunner
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +26,7 @@ class SatCLI:
     config: CLIConfig
     excluded_solvers: List[Solver] = field(default_factory=list)
     single_run: bool = False
+    client: Client = field(init=False)
 
     async def run(self) -> None:
         self.validate_config()
@@ -37,17 +38,17 @@ class SatCLI:
         )
 
         sleep_time = 1
-        client = Client(self.config)
 
         while True:
             try:
                 async with connect(
-                    str(client.config.host), max_size=1024 * 1024 * 32
+                    str(self.config.host), max_size=1024 * 1024 * 32
                 ) as ws:
+                    self.client = Client(self.config, ws)
                     try:
                         sleep_time = 1
-                        models.Welcome.model_validate_json(await ws.recv())
-                        await self.process_solvers(ws, client)
+                        await self.client.welcome()
+                        await self.process_solvers()
                     except OSError as e:
                         # TODO: we do not want to catch OSErrors from inside,
                         # so let us just repackage it for now
@@ -78,61 +79,45 @@ class SatCLI:
                     self.config.output_folder / solver.output_path, "w"
                 ).close()
 
-    async def process_solvers(
-        self, ws: ClientConnection, client: Client
-    ) -> None:
+    async def process_solvers(self) -> None:
         while True:
-            await client.trigger_countdown(ws)
+            await self.client.trigger_countdown()
+            await self.client.register_solvers()
 
-            await client.register_solvers(ws)
-
-            instance = await client.get_instance(ws)
+            instance = await self.client.get_instance()
 
             try:
                 async with asyncio.TaskGroup() as tg:
-                    tg.create_task(self.wait_for_close(ws))
-                    tg.create_task(self.run_solvers(client, ws, instance))
+                    tg.create_task(self.stop_on_connection_close())
+                    tg.create_task(self.run_solvers(instance))
             except* TerminateTaskGroup:
                 pass
             if self.single_run:
                 break
 
-    @staticmethod
-    async def wait_for_close(ws: ClientConnection) -> None:
-        await ws.wait_closed()
+    async def stop_on_connection_close(self) -> None:
+        await self.client.wait_closed()
         raise TerminateTaskGroup()
 
-    async def run_solvers(
-        self, client: Client, ws: ClientConnection, instance: bytes
-    ) -> None:
-        tasks = []
+    async def run_solver(self, solver: Solver, instance: bytes) -> None:
+        if solver in self.excluded_solvers:
+            return
+
+        runner = SolverRunner(self.config, solver, self.client)
+
         try:
-            task_to_solver = {}
+            await runner.run_solver(instance)
+        except FileNotFoundError:
+            self.excluded_solvers.append(solver)
+        except TimeoutError:
+            logger.info(f"Solver at {solver.solver_path} timed out.")
+
+    async def run_solvers(self, instance: bytes) -> None:
+        async with asyncio.TaskGroup() as tg:
             for solver in self.config.solvers:
-                if solver in self.excluded_solvers:
-                    continue
-                task = asyncio.create_task(
-                    client.run_solver(ws, solver, instance)
-                )
-                tasks.append(task)
-                task_to_solver[task] = solver
+                tg.create_task(self.run_solver(solver, instance))
 
-            results = await asyncio.gather(*tasks, return_exceptions=True)
-            for task, result in zip(tasks, results):
-                solver = task_to_solver[task]
-                if isinstance(result, FileNotFoundError):
-                    self.excluded_solvers.append(solver)
-                elif isinstance(result, TimeoutError):
-                    logger.error(
-                        f"Solver at {solver.solver_path} timed out. "
-                        f"Will attempt to run it "
-                    )
-
-            raise TerminateTaskGroup()
-        except asyncio.CancelledError:
-            for t in tasks:
-                t.cancel()
-            raise
+        raise TerminateTaskGroup()
 
 
 async def cli(args: argparse.Namespace) -> None:
