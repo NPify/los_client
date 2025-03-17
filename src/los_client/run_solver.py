@@ -87,6 +87,7 @@ class SolverRunner:
 
     @staticmethod
     def parse_result(result: str) -> SAT_solution | None:
+        parsed_successfull = False
         satisfiable: bool = False
         assignments: list[int] = []
         for line in result.split("\n"):
@@ -94,14 +95,21 @@ class SolverRunner:
                 continue
             if line.startswith("s SATISFIABLE"):
                 satisfiable = True
+                parsed_successfull = True
                 continue
             if line.startswith("s UNSATISFIABLE"):
+                parsed_successfull = True
                 return SAT_solution(False, assignments)
             if line.startswith("s UNKNOWN"):
+                parsed_successfull = True
                 return None
             if line.startswith("v"):
                 values = line[1:].split()
                 assignments += list(map(int, values))
                 if values[-1] == "0":
                     break
+
+        if not parsed_successfull:
+            raise RuntimeError("Failed to parse SAT solver output.")
+
         return SAT_solution(satisfiable, assignments)
