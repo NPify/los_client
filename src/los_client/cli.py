@@ -6,14 +6,14 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import List
 
-from websockets.asyncio.client import ClientConnection, connect
+from websockets.asyncio.client import connect
 from websockets.exceptions import WebSocketException
 
-from los_client import models
 from los_client.__about__ import __version__
 from los_client.client import Client
 from los_client.config import CLIConfig, Solver
-
+from los_client.run_solver import SolverRunner
+from los_client.exceptions import SolverException
 logger = logging.getLogger(__name__)
 
 
@@ -26,6 +26,7 @@ class SatCLI:
     config: CLIConfig
     excluded_solvers: List[Solver] = field(default_factory=list)
     single_run: bool = False
+    client: Client = field(init=False)
 
     async def run(self) -> None:
         self.validate_config()
@@ -37,17 +38,17 @@ class SatCLI:
         )
 
         sleep_time = 1
-        client = Client(self.config)
 
         while True:
             try:
                 async with connect(
-                    str(client.config.host), max_size=1024 * 1024 * 32
+                    str(self.config.host), max_size=1024 * 1024 * 32
                 ) as ws:
+                    self.client = Client(self.config, ws)
                     try:
                         sleep_time = 1
-                        models.Welcome.model_validate_json(await ws.recv())
-                        await self.process_solvers(ws, client)
+                        await self.client.welcome()
+                        await self.process_solvers()
                     except OSError as e:
                         # TODO: we do not want to catch OSErrors from inside,
                         # so let us just repackage it for now
@@ -66,6 +67,12 @@ class SatCLI:
                 break
 
     def validate_config(self) -> None:
+        try:
+            open(self.config.output_folder / self.config.problem_path, "w").close()
+        except OSError as e:
+            e.add_note("Can't write problem file. You may need to adjust the configuration.")
+            raise
+
         if not self.config.solvers:
             raise ValueError("No solvers are configured. ")
 
@@ -78,61 +85,54 @@ class SatCLI:
                     self.config.output_folder / solver.output_path, "w"
                 ).close()
 
-    async def process_solvers(
-        self, ws: ClientConnection, client: Client
-    ) -> None:
-        while True:
-            await client.trigger_countdown(ws)
+    async def process_solvers(self) -> None:
+        while len(self.excluded_solvers) < len(self.config.solvers):
+            await self.client.trigger_countdown()
+            await self.client.register_solvers()
 
-            await client.register_solvers(ws)
-
-            instance = await client.get_instance(ws)
+            instance = await self.client.get_instance()
+            instance_path = (
+                self.config.output_folder / self.config.problem_path
+            )
+            with open(instance_path, "wb") as f:
+                f.write(instance)
 
             try:
                 async with asyncio.TaskGroup() as tg:
-                    tg.create_task(self.wait_for_close(ws))
-                    tg.create_task(self.run_solvers(client, ws, instance))
+                    tg.create_task(self.stop_on_connection_close())
+                    tg.create_task(self.run_solvers(instance_path))
             except* TerminateTaskGroup:
                 pass
             if self.single_run:
                 break
 
-    @staticmethod
-    async def wait_for_close(ws: ClientConnection) -> None:
-        await ws.wait_closed()
+    async def stop_on_connection_close(self) -> None:
+        await self.client.wait_closed()
         raise TerminateTaskGroup()
 
-    async def run_solvers(
-        self, client: Client, ws: ClientConnection, instance: bytes
-    ) -> None:
-        tasks = []
+    async def run_solver(self, solver: Solver, instance_path: Path) -> None:
+        if solver in self.excluded_solvers:
+            return
+
+        runner = SolverRunner(self.config, solver, self.client)
+
         try:
-            task_to_solver = {}
+            await runner.run_solver(instance_path)
+        except SolverException as e:
+            logging.error(str(e))
+            logger.warning(
+                f"Excluding solver from further runs: {solver.solver_path}"
+            )
+            self.excluded_solvers.append(solver)
+        except TimeoutError:
+            logger.info(f"Solver at {solver.solver_path} timed out.")
+
+    async def run_solvers(self, instance_path: Path) -> None:
+        async with asyncio.TaskGroup() as tg:
             for solver in self.config.solvers:
-                if solver in self.excluded_solvers:
-                    continue
-                task = asyncio.create_task(
-                    client.run_solver(ws, solver, instance)
-                )
-                tasks.append(task)
-                task_to_solver[task] = solver
+                tg.create_task(self.run_solver(solver, instance_path))
 
-            results = await asyncio.gather(*tasks, return_exceptions=True)
-            for task, result in zip(tasks, results):
-                solver = task_to_solver[task]
-                if isinstance(result, FileNotFoundError):
-                    self.excluded_solvers.append(solver)
-                elif isinstance(result, TimeoutError):
-                    logger.error(
-                        f"Solver at {solver.solver_path} timed out. "
-                        f"Will attempt to run it "
-                    )
-
-            raise TerminateTaskGroup()
-        except asyncio.CancelledError:
-            for t in tasks:
-                t.cancel()
-            raise
+        raise TerminateTaskGroup()
 
 
 async def cli(args: argparse.Namespace) -> None:
@@ -180,12 +180,6 @@ def main() -> None:
         dest="log_level",
         const=logging.DEBUG,
         action="store_const",
-    )
-    parser.add_argument(
-        "--quiet",
-        default=False,
-        action="store_true",
-        help="Disable countdown display.",
     )
     parser.add_argument(
         "--write_outputs",
@@ -275,16 +269,19 @@ def main() -> None:
     if not args.command:
         print("No command given. Use --help for help.")
 
-    logging.basicConfig(level=args.log_level)
+    debug = args.log_level == logging.DEBUG
+
+    fmt = "%(asctime)s [%(levelname)s] %(filename)s:%(lineno)d %(message)s"
+    logging.basicConfig(level=args.log_level, format=fmt)
     try:
-        asyncio.run(cli(args))
-    except (KeyboardInterrupt, asyncio.CancelledError) as e:
+        asyncio.run(cli(args), debug=debug)
+    except KeyboardInterrupt as e:
         if args.log_level != logging.DEBUG:
             logger.info("Got Interrupted, Goodbye!")
         else:
             raise e from e
     except Exception as e:
-        if args.log_level == logging.DEBUG:
+        if debug:
             raise e from e
         else:
             logger.error(f"Error: {e}")
