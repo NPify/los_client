@@ -100,13 +100,19 @@ class Client:
 
         logger.info("Solution submitted")
 
+
         if solution.satisfiable:
-            await self.ws.send(
-                models.Assignment(
+            data = models.Assignment(
                     solver_token=solver_token,
                     assignment=solution.assignment,
                 ).model_dump_json()
-            )
+
+            frame_size = 1024
+
+            await self.ws.send((
+                data[frame_size * i: frame_size*i + frame_size]
+                for i in range(len(data) // frame_size + 1)
+            ))
             logger.info("Assignment submitted")
 
     async def query_errors(self, ws: ClientConnection) -> None:
