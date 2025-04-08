@@ -59,7 +59,7 @@ class SatCLI:
                     "Waiting for server to come back up. "
                     f"Retry in {sleep_time} seconds. "
                 )
-                await asyncio.sleep(sleep_time)
+                await asyncio.sleep(30)
                 sleep_time *= 2
                 if sleep_time > 60:
                     sleep_time = 60
